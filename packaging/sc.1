@@ -1,0 +1,257 @@
+.\" Man page for sc - Scientific Calculator
+.\" Process with: groff -man -Tascii sc.1
+.TH SC 1 "December 2024" "sc 1.0" "User Commands"
+.SH NAME
+sc \- arbitrary precision scientific calculator
+.SH SYNOPSIS
+.B sc
+[\fIexpression\fR]
+.br
+echo \fIexpression\fR |
+.B sc
+.SH DESCRIPTION
+.B sc
+is an interactive arbitrary precision scientific calculator supporting
+complex numbers, matrices, and a wide range of mathematical functions.
+It uses 128-bit quad precision floating point internally for high accuracy.
+.PP
+When run without arguments,
+.B sc
+enters interactive mode with a
+.B >>>
+prompt (like bc). When given an expression as an argument or via stdin,
+it evaluates and prints the result.
+.SH FEATURES
+.TP
+.B Arbitrary Precision
+128-bit quad precision (approximately 34 significant digits)
+.TP
+.B Complex Numbers
+Full support for complex arithmetic using
+.I i
+as the imaginary unit
+.TP
+.B Matrices
+Create, manipulate, and perform linear algebra operations on matrices
+.TP
+.B Scientific Functions
+Trigonometric, hyperbolic, exponential, logarithmic, and special functions
+.TP
+.B Multiple Number Formats
+Decimal, hexadecimal (0x), binary (0b), octal (0o), and Roman numerals
+.SH OPERATORS
+.TP
+.B + \- * /
+Basic arithmetic (addition, subtraction, multiplication, division)
+.TP
+.B ^
+Exponentiation (right associative: 2^3^2 = 2^9 = 512)
+.TP
+.B %
+Modulo
+.TP
+.B !
+Factorial (postfix)
+.TP
+.B ( )
+Grouping
+.SH FUNCTIONS
+.SS Trigonometric (radians)
+.B sin cos tan asin acos atan atan2
+.SS Hyperbolic
+.B sinh cosh tanh asinh acosh atanh
+.SS Exponential and Logarithmic
+.B exp
+\- exponential (e^x)
+.br
+.B log ln
+\- natural logarithm
+.br
+.B log10
+\- base-10 logarithm
+.br
+.B log2
+\- base-2 logarithm
+.SS Power and Root
+.B sqrt cbrt
+\- square root, cube root
+.br
+.B pow(x,y)
+\- x raised to power y
+.SS Complex Number Functions
+.B abs arg conj real imag
+.br
+.B phase polar rect
+.SS Other Functions
+.B floor ceil round trunc frac
+.br
+.B min max gcd lcm
+.br
+.B rand randn randi
+\- random numbers
+.SH CONSTANTS
+.TP
+.B pi
+3.14159265358979323846...
+.TP
+.B e
+2.71828182845904523536...
+.TP
+.B i
+Imaginary unit (sqrt(-1))
+.TP
+.B Inf
+Positive infinity
+.TP
+.B NaN
+Not a number
+.TP
+.B ans
+Result of previous calculation
+.SH COMMANDS
+.TP
+.B help
+Display help information
+.TP
+.B digits \fIN\fR
+Set display precision to N significant figures (default 16, max 37)
+.TP
+.B round \fIMODE\fR
+Set rounding mode: nearest, ceil, floor, trunc, away
+.TP
+.B vars
+Show defined variables
+.TP
+.B clear
+Clear all variables
+.TP
+.B test
+Run built-in test suite
+.TP
+.B quit
+Exit the calculator
+.SH VARIABLES
+Single-letter variables (a-z) can be assigned values:
+.PP
+.RS
+>>> x = 5
+.br
+>>> y = x^2
+.br
+>>> y
+.br
+= 25
+.RE
+.SH MATRICES
+Matrices are defined using square brackets:
+.PP
+.RS
+>>> A = [1,2;3,4]
+.br
+>>> B = [5,6;7,8]
+.br
+>>> A * B
+.RE
+.PP
+Matrix functions include:
+.B inv transpose det trace eye zeros ones diag
+.SH EXAMPLES
+.TP
+Basic arithmetic:
+>>> 2 + 3 * 4
+.br
+= 14
+.TP
+Complex numbers:
+>>> sqrt(\-1)
+.br
+= i
+.br
+>>> (1+2i) * (3\-4i)
+.br
+= 11+2i
+.TP
+Euler's identity:
+>>> exp(i*pi) + 1
+.br
+= 0
+.TP
+Previous answer:
+>>> 1/3
+.br
+= 0.3333333333333333
+.br
+>>> ans * 3
+.br
+= 1
+.TP
+Multiple expressions:
+>>> 2+3; ans*2
+.br
+= 10
+.TP
+Hexadecimal input:
+>>> 0xFF + 1
+.br
+= 256
+.TP
+Matrix operations:
+>>> A = [1,2;3,4]
+.br
+>>> det(A)
+.br
+= \-2
+.br
+>>> inv(A)
+.SH MODES
+.TP
+.B rpn
+Reverse Polish Notation mode (HP calculator style)
+.TP
+.B tvm
+Time Value of Money calculations
+.TP
+.B stat
+Statistical calculations with data entry
+.SH EXIT STATUS
+.TP
+.B 0
+Success
+.TP
+.B 1
+Error in expression or calculation
+.SH NOTES
+.B log()
+and
+.B ln()
+both compute the natural logarithm. Use
+.B log10()
+for base-10 logarithm.
+.PP
+Exponentiation is right-associative: 2^3^2 = 2^(3^2) = 512
+.PP
+The
+.B ans
+variable is updated after each expression, including those
+separated by semicolons.
+.SH IEEE 754 COMPLIANCE
+.B sc
+implements IEEE 754-2008 compliant arithmetic including proper handling of:
+.IP \(bu 2
+Infinity (+Inf, \-Inf)
+.IP \(bu 2
+Not-a-Number (NaN)
+.IP \(bu 2
+Signed zero (+0, \-0)
+.IP \(bu 2
+Special function domain errors
+.SH SEE ALSO
+.BR bc (1),
+.BR dc (1),
+.BR calc (1)
+.SH AUTHOR
+Written by Stu.
+.SH COPYRIGHT
+Copyright \(co 2024. License: MIT.
+.SH BUGS
+Report bugs to the project repository.

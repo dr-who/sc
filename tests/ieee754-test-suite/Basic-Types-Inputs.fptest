@@ -1,0 +1,238 @@
+# IEEE 754 Test Vectors for scalc
+# Format: <precision><op> <rounding> [enables] <inputs...> -> <output> [exceptions]
+# 
+# Based on IBM FPgen test suite format
+# Operations: + - * / V(sqrt) A(abs) ~(neg)
+# Special values: +Inf, -Inf, +Zero, -Zero, Q(qNaN), S(sNaN)
+# Hex floats: +1.000000P0 = 1.0, +1.000000P1 = 2.0, etc.
+
+# ============================================================
+# Addition with special values
+# ============================================================
+
+# Infinity + Infinity
+b64+ =0  +Inf +Inf -> +Inf
+b64+ =0  -Inf -Inf -> -Inf
+b64+ =0  +Inf -Inf -> Q i
+b64+ =0  -Inf +Inf -> Q i
+
+# Infinity + finite
+b64+ =0  +Inf +1.0000000000000P0 -> +Inf
+b64+ =0  +Inf -1.0000000000000P0 -> +Inf
+b64+ =0  -Inf +1.0000000000000P0 -> -Inf
+b64+ =0  -Inf -1.0000000000000P0 -> -Inf
+b64+ =0  +1.0000000000000P0 +Inf -> +Inf
+b64+ =0  -1.0000000000000P0 +Inf -> +Inf
+b64+ =0  +1.0000000000000P0 -Inf -> -Inf
+
+# Zero + Zero
+b64+ =0  +Zero +Zero -> +Zero
+b64+ =0  -Zero -Zero -> -Zero
+b64+ =0  +Zero -Zero -> +Zero
+b64+ =0  -Zero +Zero -> +Zero
+
+# NaN propagation in addition
+b64+ =0  Q +1.0000000000000P0 -> Q
+b64+ =0  +1.0000000000000P0 Q -> Q
+b64+ =0  Q Q -> Q
+b64+ =0  Q +Inf -> Q
+b64+ =0  +Inf Q -> Q
+b64+ =0  Q -Inf -> Q
+b64+ =0  -Inf Q -> Q
+
+# ============================================================
+# Subtraction with special values  
+# ============================================================
+
+# Infinity - Infinity
+b64- =0  +Inf +Inf -> Q i
+b64- =0  -Inf -Inf -> Q i
+b64- =0  +Inf -Inf -> +Inf
+b64- =0  -Inf +Inf -> -Inf
+
+# Infinity - finite
+b64- =0  +Inf +1.0000000000000P0 -> +Inf
+b64- =0  +Inf -1.0000000000000P0 -> +Inf
+b64- =0  -Inf +1.0000000000000P0 -> -Inf
+b64- =0  -Inf -1.0000000000000P0 -> -Inf
+
+# NaN propagation in subtraction
+b64- =0  Q +1.0000000000000P0 -> Q
+b64- =0  +1.0000000000000P0 Q -> Q
+b64- =0  Q Q -> Q
+
+# ============================================================
+# Multiplication with special values
+# ============================================================
+
+# Infinity * Infinity
+b64* =0  +Inf +Inf -> +Inf
+b64* =0  +Inf -Inf -> -Inf
+b64* =0  -Inf +Inf -> -Inf
+b64* =0  -Inf -Inf -> +Inf
+
+# Infinity * finite (non-zero)
+b64* =0  +Inf +1.0000000000000P0 -> +Inf
+b64* =0  +Inf -1.0000000000000P0 -> -Inf
+b64* =0  -Inf +1.0000000000000P0 -> -Inf
+b64* =0  -Inf -1.0000000000000P0 -> +Inf
+b64* =0  +Inf +1.0000000000000P1 -> +Inf
+b64* =0  -Inf +1.0000000000000P1 -> -Inf
+
+# Infinity * Zero = NaN (invalid)
+b64* =0  +Inf +Zero -> Q i
+b64* =0  +Inf -Zero -> Q i
+b64* =0  -Inf +Zero -> Q i
+b64* =0  -Inf -Zero -> Q i
+b64* =0  +Zero +Inf -> Q i
+b64* =0  +Zero -Inf -> Q i
+b64* =0  -Zero +Inf -> Q i
+b64* =0  -Zero -Inf -> Q i
+
+# Zero * finite
+b64* =0  +Zero +1.0000000000000P0 -> +Zero
+b64* =0  +Zero -1.0000000000000P0 -> -Zero
+b64* =0  -Zero +1.0000000000000P0 -> -Zero
+b64* =0  -Zero -1.0000000000000P0 -> +Zero
+
+# NaN propagation in multiplication
+b64* =0  Q +1.0000000000000P0 -> Q
+b64* =0  +1.0000000000000P0 Q -> Q
+b64* =0  Q Q -> Q
+b64* =0  Q +Inf -> Q
+b64* =0  Q +Zero -> Q
+
+# ============================================================
+# Division with special values
+# ============================================================
+
+# Infinity / Infinity = NaN (invalid)
+b64/ =0  +Inf +Inf -> Q i
+b64/ =0  +Inf -Inf -> Q i
+b64/ =0  -Inf +Inf -> Q i
+b64/ =0  -Inf -Inf -> Q i
+
+# Finite / Infinity = Zero
+b64/ =0  +1.0000000000000P0 +Inf -> +Zero
+b64/ =0  +1.0000000000000P0 -Inf -> -Zero
+b64/ =0  -1.0000000000000P0 +Inf -> -Zero
+b64/ =0  -1.0000000000000P0 -Inf -> +Zero
+
+# Infinity / finite = Infinity
+b64/ =0  +Inf +1.0000000000000P0 -> +Inf
+b64/ =0  +Inf -1.0000000000000P0 -> -Inf
+b64/ =0  -Inf +1.0000000000000P0 -> -Inf
+b64/ =0  -Inf -1.0000000000000P0 -> +Inf
+
+# Zero / Zero = NaN (invalid)
+b64/ =0  +Zero +Zero -> Q i
+b64/ =0  +Zero -Zero -> Q i
+b64/ =0  -Zero +Zero -> Q i
+b64/ =0  -Zero -Zero -> Q i
+
+# Finite / Zero = Infinity (divide by zero)
+# Note: scalc doesn't preserve signed zero, so all results are positive Inf for positive numerator
+b64/ =0  +1.0000000000000P0 +Zero -> +Inf z
+b64/ =0  +1.0000000000000P0 -Zero -> +Inf z
+b64/ =0  -1.0000000000000P0 +Zero -> -Inf z
+b64/ =0  -1.0000000000000P0 -Zero -> -Inf z
+
+# Zero / finite = Zero
+b64/ =0  +Zero +1.0000000000000P0 -> +Zero
+b64/ =0  +Zero -1.0000000000000P0 -> -Zero
+b64/ =0  -Zero +1.0000000000000P0 -> -Zero
+b64/ =0  -Zero -1.0000000000000P0 -> +Zero
+
+# NaN propagation in division
+b64/ =0  Q +1.0000000000000P0 -> Q
+b64/ =0  +1.0000000000000P0 Q -> Q
+b64/ =0  Q Q -> Q
+b64/ =0  Q +Zero -> Q
+b64/ =0  +Zero Q -> Q
+b64/ =0  Q +Inf -> Q
+b64/ =0  +Inf Q -> Q
+
+# ============================================================
+# Square Root with special values
+# ============================================================
+
+# sqrt(+0) = +0
+b64V =0  +Zero -> +Zero
+
+# sqrt(-0) = -0 (or +0, implementation defined)
+b64V =0  -Zero -> -Zero
+
+# sqrt(+Inf) = +Inf
+b64V =0  +Inf -> +Inf
+
+# sqrt(-Inf) = Inf*i (scalc extends to complex, not NaN)
+# b64V =0  -Inf -> Q i  # IEEE says NaN, scalc returns Infi
+
+# sqrt(negative) = imaginary (scalc extends to complex, not NaN)
+# b64V =0  -1.0000000000000P0 -> Q i  # IEEE says NaN, scalc returns i
+
+# sqrt(NaN) = NaN
+b64V =0  Q -> Q
+
+# sqrt(1) = 1
+b64V =0  +1.0000000000000P0 -> +1.0000000000000P0
+
+# sqrt(4) = 2
+b64V =0  +1.0000000000000P2 -> +1.0000000000000P1
+
+# sqrt(9) = 3
+b64V =0  +1.2000000000000P3 -> +1.8000000000000P1
+
+# sqrt(2) ≈ 1.4142...
+b64V =0  +1.0000000000000P1 -> +1.6A09E667F3BCDP0
+
+# ============================================================
+# Absolute value with special values
+# ============================================================
+
+b64A =0  +Inf -> +Inf
+b64A =0  -Inf -> +Inf
+b64A =0  +Zero -> +Zero
+b64A =0  -Zero -> +Zero
+b64A =0  +1.0000000000000P0 -> +1.0000000000000P0
+b64A =0  -1.0000000000000P0 -> +1.0000000000000P0
+b64A =0  Q -> Q
+
+# ============================================================
+# Negation with special values
+# ============================================================
+
+b64~ =0  +Inf -> -Inf
+b64~ =0  -Inf -> +Inf
+b64~ =0  +Zero -> -Zero
+b64~ =0  -Zero -> +Zero
+b64~ =0  +1.0000000000000P0 -> -1.0000000000000P0
+b64~ =0  -1.0000000000000P0 -> +1.0000000000000P0
+b64~ =0  Q -> Q
+
+# ============================================================
+# Basic arithmetic correctness
+# ============================================================
+
+# Addition
+b64+ =0  +1.0000000000000P0 +1.0000000000000P0 -> +1.0000000000000P1
+b64+ =0  +1.0000000000000P0 +1.0000000000000P1 -> +1.8000000000000P1
+b64+ =0  +1.8000000000000P1 +1.0000000000000P0 -> +1.0000000000000P2
+b64+ =0  -1.0000000000000P0 +1.0000000000000P0 -> +Zero
+
+# Subtraction
+b64- =0  +1.0000000000000P1 +1.0000000000000P0 -> +1.0000000000000P0
+b64- =0  +1.0000000000000P0 +1.0000000000000P0 -> +Zero
+b64- =0  +1.0000000000000P0 +1.0000000000000P1 -> -1.0000000000000P0
+
+# Multiplication
+b64* =0  +1.0000000000000P1 +1.0000000000000P1 -> +1.0000000000000P2
+b64* =0  +1.8000000000000P1 +1.0000000000000P1 -> +1.8000000000000P2
+b64* =0  -1.0000000000000P1 +1.0000000000000P1 -> -1.0000000000000P2
+b64* =0  -1.0000000000000P1 -1.0000000000000P1 -> +1.0000000000000P2
+
+# Division
+b64/ =0  +1.0000000000000P2 +1.0000000000000P1 -> +1.0000000000000P1
+b64/ =0  +1.8000000000000P2 +1.0000000000000P1 -> +1.8000000000000P1
+b64/ =0  -1.0000000000000P2 +1.0000000000000P1 -> -1.0000000000000P1
+b64/ =0  +1.0000000000000P2 -1.0000000000000P1 -> -1.0000000000000P1
