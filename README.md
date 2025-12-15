@@ -2,9 +2,11 @@
 
 A high-precision scientific calculator with complex number support, matrix operations, and IEEE 754-2008 compliance.
 
+Join us as we run 64/128/256/512/1024 and more floating point math on DOS, VIC-20s, MacOS, Linux, iPhones.
+
 ## Features
 
-- **128-bit Quad Precision**: ~34 significant decimal digits
+- **Compile time precision**: e.g. in 128-bit more it's ~34 significant decimal digits
 - **Complex Numbers**: Full arithmetic with `i` as imaginary unit
 - **Matrices**: Create, manipulate, and solve linear systems
 - **Scientific Functions**: Trig, hyperbolic, exponential, logarithmic
