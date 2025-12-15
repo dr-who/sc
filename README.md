@@ -6,7 +6,7 @@ Join us as we run 64/128/256/512/1024 and more floating point math on DOS, VIC-2
 
 ## Features
 
-- **Compile time precision**: e.g. in 128-bit more it's ~34 significant decimal digits
+- **Compile time precision**: e.g. in 128-bit mode it's ~34 significant decimal digits
 - **Complex Numbers**: Full arithmetic with `i` as imaginary unit
 - **Matrices**: Create, manipulate, and solve linear systems
 - **Scientific Functions**: Trig, hyperbolic, exponential, logarithmic
