@@ -2,6 +2,8 @@
 
 A high-precision scientific calculator with complex number support, matrix operations, and IEEE 754-2008 compliance.
 
+Doesn't require an FPU. Just requires a 8-bit processor and above with 16-bit int operations.
+
 Join us as we run 64/128/256/512/1024 and more floating point math on DOS, VIC-20s, MacOS, Linux, iPhones. The arithmetic is perform in 16-bit limbs:
 
 e.g.
