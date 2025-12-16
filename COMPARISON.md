@@ -202,7 +202,7 @@ $ sc "digits 38; pi"
 
 # bc -l (arbitrary, but slow)
 $ echo "scale=38; 4*a(1)" | bc -l
-3.14159265358979323844643265362274860062
+3.14159265358979323846264338327950288416
 
 # Casio fx-991: 3.141592654 (10 digits displayed)
 # TI-84: 3.1415926536 (10 digits displayed)  
