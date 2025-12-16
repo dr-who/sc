@@ -201,19 +201,27 @@ test_eq "2/1/2/1/2" "0.5"
 
 # =============================================
 echo ""
-echo -e "${CYAN}=== Modulo Operator ===${NC}"
+echo -e "${CYAN}=== Modulo Function ===${NC}"
 # =============================================
 
-test_eq "10%3" "1"
-test_eq "17%5" "2"
-test_eq "100%7" "2"
-test_eq "15%5" "0"
-test_eq "23%10" "3"
-test_eq "-10%3" "2"          # Floor mod: -10 - 3*floor(-10/3) = -10 - 3*(-4) = 2
-test_eq "10%-3" "-2"
 test_eq "mod(10, 3)" "1"
 test_eq "mod(17, 5)" "2"
-test_eq "7.5%2" "1.5"
+test_eq "mod(100, 7)" "2"
+test_eq "mod(15, 5)" "0"
+test_eq "mod(23, 10)" "3"
+test_eq "mod(-10, 3)" "2"        # Floor mod: -10 - 3*floor(-10/3) = -10 - 3*(-4) = 2
+test_eq "mod(10, -3)" "-2"
+test_eq "rem(10, 3)" "1"
+test_eq "rem(17, 5)" "2"
+test_eq "mod(7.5, 2)" "1.5"
+
+# =============================================
+echo ""
+echo -e "${CYAN}=== Comment Syntax (% is comment) ===${NC}"
+# =============================================
+
+test_eq "5 + 3 % this is a comment" "8"
+test_eq "10 % everything after percent is ignored" "10"
 
 # =============================================
 echo ""

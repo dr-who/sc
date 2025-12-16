@@ -223,13 +223,13 @@ int main(int argc, char *argv[])
             if (count == 0) printf("  (none)\n");
             
             /* Show built-in functions */
-            printf("\nBuilt-in functions (~350):\n\n");
+            printf("\nBuilt-in functions (~365):\n\n");
             
             printf("TRIGONOMETRY:\n");
             printf("  sin cos tan asin acos atan atan2 sinh cosh tanh\n");
             printf("  asinh acosh atanh sec csc cot asec acsc acot\n");
-            printf("  sech csch coth sind cosd tand asind acosd atand atan2d\n");
-            printf("  sinc\n\n");
+            printf("  sech csch coth asech acsch acoth\n");
+            printf("  sind cosd tand asind acosd atand atan2d sinc\n\n");
             
             printf("EXPONENTIAL & LOGARITHMIC:\n");
             printf("  exp ln log log10 log2 exp2 pow sqrt cbrt nthroot\n");
@@ -244,8 +244,9 @@ int main(int argc, char *argv[])
             printf("  mod rem\n\n");
             
             printf("NUMBER THEORY:\n");
-            printf("  gcd lcm isprime prime factor divisors\n");
-            printf("  even odd ncr npr fact factorial gamma lgamma\n\n");
+            printf("  gcd lcm isprime prime factor divisors totient\n");
+            printf("  even odd ncr npr fact factorial factorial2 gamma lgamma\n");
+            printf("  fibonacci lucas catalan\n\n");
             
             printf("SPECIAL FUNCTIONS:\n");
             printf("  erf erfc gamma lgamma beta\n");

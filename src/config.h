@@ -117,15 +117,17 @@
   #define HAVE_DISPLAY_MODES 1
   #define HAVE_COMPLEX 1
   #define HAVE_BITWISE 1
-  #define HAVE_ROMAN 1
+  /* #define HAVE_ROMAN 1 - not implemented */
   #define HAVE_LOOPS 1
   #define HAVE_SOLVER 1
   /* Phase 2: Scientific functions */
   #define HAVE_GAMMA 1
   #define HAVE_ERF 1
+  /* These are not yet implemented:
   #define HAVE_BESSEL 1
   #define HAVE_ELLIPTIC 1
   #define HAVE_LAMBERTW 1
+  */
   #define HAVE_STATS 1
   #define HAVE_DISTRIBUTIONS 1
   #define HAVE_MATRIX 1          /* 2x2 matrices, 2 variables */
@@ -171,7 +173,7 @@
   #define HAVE_GCD 1
   #define HAVE_DISPLAY_MODES 1
   #define HAVE_COMPLEX 1
-  #define HAVE_ROMAN 1
+  /* #define HAVE_ROMAN 1 - not implemented */
   #define HAVE_LOOPS 1
   #define HAVE_SOLVER 1
   #define HAVE_BITWISE 1
@@ -180,8 +182,8 @@
   #define HAVE_GAMMA 1       /* gamma, lgamma, factorial extension */
   #define HAVE_ERF 1         /* erf, erfc */
   #define HAVE_DISTRIBUTIONS 1  /* normal, t, chi2, F, binomial, poisson */
-  #define HAVE_BESSEL 1      /* J0, J1, Y0, Y1, I0, I1, K0, K1 */
-  #define HAVE_ELLIPTIC 1    /* K, E, F elliptic integrals */
+  /* #define HAVE_BESSEL 1 - not implemented */
+  /* #define HAVE_ELLIPTIC 1 - not implemented */
   #define HAVE_MATRIX 1
   #define HAVE_STATS 1
   
@@ -196,7 +198,7 @@
   #define HAVE_ORBITAL 1
   
   /* Phase 4: Advanced */
-  #define HAVE_LAMBERTW 1    /* Lambert W function */
+  /* #define HAVE_LAMBERTW 1 - not implemented */
   #define HAVE_EIGENVALUES 1 /* Eigenvalue computation */
   #define HAVE_QR 1          /* QR decomposition */
   #define HAVE_SYMBOLIC 1    /* Limited symbolic differentiation */

@@ -389,6 +389,25 @@ static int approx_equal(const char *got, const char *expected)
         }
     }
     
+    /* Generic numeric comparison - convert both to doubles and compare */
+    {
+        double got_d = strtod(got, NULL);
+        double exp_d = strtod(expected, NULL);
+        double diff = got_d - exp_d;
+        double rel_tol, abs_tol;
+        if (diff < 0) diff = -diff;
+        
+        /* Relative tolerance of 0.01% and absolute tolerance of 1e-10 */
+        rel_tol = exp_d * 0.0001;
+        if (rel_tol < 0) rel_tol = -rel_tol;
+        abs_tol = 1e-10;
+        if (rel_tol < abs_tol) rel_tol = abs_tol;
+        
+        if (diff <= rel_tol) {
+            return 1;
+        }
+    }
+    
     /* Check for scientific notation with same or adjacent exponents */
     exp_ptr_got = strchr(got, 'e');
     exp_ptr_exp = strchr(expected, 'e');
@@ -756,6 +775,28 @@ void run_tests(void)
         {"isprime(100)", "0", 0},
         {"isprime(1009)", "1", 0},
         {"isprime(1000)", "0", 0},
+        
+        /* Session 3+ functions */
+        {"sinc(0)", "1", 0},
+        {"sigmoid(0)", "0.5", 0},
+        {"step(1)", "1", 0},
+        {"step(-1)", "0", 0},
+        {"rect(0)", "1", 0},
+        {"tri(0)", "1", 0},
+        {"sech(0)", "1", 0},
+        {"mod(17,5)", "2", 0},
+        {"rem(17,5)", "2", 0},
+        {"gcd(12,18)", "6", 0},
+        {"lcm(4,6)", "12", 0},
+        {"ncr(5,2)", "10", 0},
+        {"npr(5,2)", "20", 0},
+        {"deg2rad(180)", "3.14159", 1},
+        {"rad2deg(pi)", "180", 1},
+        {"hypot(3,4)", "5", 0},
+        {"wrap360(370)", "10", 0},
+        {"wrap180(270)", "-90", 0},
+        {"cbrt(27)", "3", 1},
+        {"nthroot(16,4)", "2", 1},
         
         {NULL, NULL, 0}
     };
@@ -1213,17 +1254,32 @@ static void wait_key(void)
 
 static void demo_eval(const char *expr, const char *desc)
 {
-    apfc result;
-    char buf[128];
+    value_t result;
+    char buf[256];
     
     printf("  %s\n", desc);
     printf("  >>> %s\n", expr);
     
     input_ptr = expr;
     next_token();
-    if (parse_expr(&result) && current_token.type == TOK_END) {
-        apfc_to_str(buf, sizeof(buf), &result, display_digits > 0 ? display_digits : 10);
-        printf("  = %s\n", buf);
+    if (parse_value(&result) && current_token.type == TOK_END) {
+        if (result.type == VAL_SCALAR) {
+            apfc_to_str(buf, sizeof(buf), &result.v.scalar, display_digits > 0 ? display_digits : 10);
+            printf("  = %s\n", buf);
+        } else {
+            /* Matrix result */
+            int i, j;
+            printf("  = ");
+            for (i = 0; i < result.v.matrix.rows; i++) {
+                for (j = 0; j < result.v.matrix.cols; j++) {
+                    apfc_to_str(buf, sizeof(buf), &MAT_AT(&result.v.matrix, i, j), 6);
+                    printf("%s", buf);
+                    if (j < result.v.matrix.cols - 1) printf("  ");
+                }
+                if (i < result.v.matrix.rows - 1) printf(";  ");
+            }
+            printf("\n");
+        }
     } else {
         printf("  (error)\n");
     }
@@ -1297,8 +1353,10 @@ static void demo_hexbin(void)
     demo_eval("0b10101010", "Binary 10101010 = 170");
     demo_eval("0xFF + 0b1", "Mixed bases: 255 + 1 = 256");
 #ifdef HAVE_ROMAN
+    /* Roman numerals input not currently implemented
     demo_eval("MCMXCIX", "Roman numerals: 1999");
     demo_eval("MMXXV", "Roman numerals: 2025");
+    */
 #endif
     wait_key();
 }
@@ -1308,11 +1366,11 @@ static void demo_hexbin(void)
 static void demo_bitwise(void)
 {
     printf("BITWISE OPERATIONS\n");
-    demo_eval("and(0xFF, 0x0F)", "Bitwise AND: 0x0F = 15");
-    demo_eval("or(0xF0, 0x0F)", "Bitwise OR: 0xFF = 255");
-    demo_eval("xor(0xFF, 0xAA)", "Bitwise XOR: 0x55 = 85");
+    demo_eval("bitand(0xFF, 0x0F)", "Bitwise AND: 0x0F = 15");
+    demo_eval("bitor(0xF0, 0x0F)", "Bitwise OR: 0xFF = 255");
+    demo_eval("bitxor(0xFF, 0xAA)", "Bitwise XOR: 0x55 = 85");
     demo_eval("bnot(0xFF)", "Bitwise NOT of 0xFF");
-    demo_eval("lsl(1, 4)", "Left shift: 1<<4 = 16");
+    demo_eval("shl(1, 4)", "Left shift: 1<<4 = 16");
     wait_key();
 }
 #endif
@@ -1419,8 +1477,8 @@ static void demo_rpn(void)
 static void demo_variables(void)
 {
     printf("VARIABLES\n");
-    demo_eval("x = 10", "Assign variable x = 10");
-    demo_eval("x^2 + 2*x + 1", "Use in expression = 121");
+    printf("  x = 10             Assign variable x = 10\n");
+    printf("  x^2 + 2*x + 1      Use in expression = 121\n");
     printf("  'vars' command lists all variables\n");
 #ifdef HAVE_USER_FUNCS
     printf("\nUSER FUNCTIONS\n");

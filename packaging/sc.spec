@@ -52,10 +52,12 @@ make install DESTDIR=$RPM_BUILD_ROOT PREFIX=/usr
 %license LICENSE
 %doc README.md
 %{_bindir}/sc
+%{_bindir}/sc-256
+%{_bindir}/sc-64
 %{_mandir}/man1/sc.1*
 
 %changelog
-* Mon Dec 15 2024 Stu <stu@example.com> - 1.0.0-1
+* Sun Dec 15 2024 Stu <stu@example.com> - 1.0.0-1
 - Initial RPM release
 - 128-bit quad precision arithmetic
 - Complex number support

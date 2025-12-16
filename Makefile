@@ -148,8 +148,13 @@ srpm: dist
 
 # Run tests (uses 128-bit version)
 test: $(TARGET_128)
-	@echo "Running test suite..."
+	@echo "Running comprehensive test suite..."
+	@./tests/test_all_functions.sh $(TARGET_128)
+	@echo ""
+	@echo "Running BEDMAS tests..."
 	@./tests/test_bedmas.sh $(TARGET_128)
+	@echo ""
+	@echo "Running core tests..."
 	@./tests/test_main.sh $(TARGET_128)
 
 # Test all versions

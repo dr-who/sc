@@ -42,7 +42,7 @@ Multiplication (Unicode × supported)
 Division (Unicode ÷ supported)
 .TP
 .B %
-Modulo (floor division remainder)
+Comment (MATLAB-style: everything after % is ignored)
 .TP
 .B ^
 Exponentiation (right-associative: 2^3^2 = 2^9 = 512)
@@ -210,8 +210,14 @@ Inverse reciprocal functions
 .B sinh(x), cosh(x), tanh(x)
 Hyperbolic sine, cosine, tangent
 .TP
+.B sech(x), csch(x), coth(x)
+Hyperbolic secant, cosecant, cotangent
+.TP
 .B asinh(x), acosh(x), atanh(x)
 Inverse hyperbolic functions
+.TP
+.B asech(x), acsch(x), acoth(x)
+Inverse hyperbolic secant, cosecant, cotangent
 .SS Exponential and Logarithmic
 .TP
 .B exp(x)
@@ -271,7 +277,7 @@ Integer part (truncate toward zero)
 Fractional part (x - trunc(x))
 .TP
 .B mod(a, b)
-Modulo (same as a % b)
+Modulo (floor division remainder: a - b*floor(a/b))
 .TP
 .B abs(x)
 Absolute value
@@ -823,6 +829,15 @@ Vandermonde matrix
 .B toeplitz(c)
 Toeplitz matrix
 .TP
+.B magic(n)
+n-by-n magic square
+.TP
+.B pascal(n)
+n-by-n Pascal matrix (binomial coefficients)
+.TP
+.B hilb(n)
+n-by-n Hilbert matrix (H(i,j) = 1/(i+j-1))
+.TP
 .B hankel(c)
 Hankel matrix
 .TP
@@ -931,6 +946,18 @@ All divisors of n as a row vector
 .TP
 .B mobius(n)
 Mobius function mu(n)
+.TP
+.B fibonacci(n)
+nth Fibonacci number (F(0)=0, F(1)=1)
+.TP
+.B lucas(n)
+nth Lucas number (L(0)=2, L(1)=1)
+.TP
+.B catalan(n)
+nth Catalan number C(n) = (2n)!/((n+1)!*n!)
+.TP
+.B factorial2(n)
+Double factorial n!! = n*(n-2)*(n-4)*...
 .SS Statistical Distribution Functions
 .TP
 .B normpdf(x)
@@ -944,6 +971,9 @@ Standard normal cumulative distribution
 .TP
 .B normcdf(x, mu, sigma)
 Normal cumulative distribution with parameters
+.TP
+.B norminv(p)
+Inverse standard normal CDF (quantile function, probit)
 .SS Extended Trigonometric Functions
 .TP
 .B sinpi(x)

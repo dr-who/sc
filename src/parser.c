@@ -66,7 +66,7 @@ static int parse_term(apfc *result)
     if (!parse_unary(result)) return 0;
 
     while (current_token.type == TOK_MUL || current_token.type == TOK_DIV ||
-           current_token.type == TOK_MOD || current_token.type == TOK_BACKSLASH) {
+           current_token.type == TOK_BACKSLASH) {
         op = current_token.type;
         next_token();
         if (!parse_unary(&right)) return 0;
@@ -75,10 +75,6 @@ static int parse_term(apfc *result)
             apfc_mul(&temp, result, &right);
         } else if (op == TOK_DIV) {
             apfc_div(&temp, result, &right);
-        } else if (op == TOK_MOD) {
-            /* Modulo only on real parts */
-            apf_mod(&temp.re, &result->re, &right.re);
-            apf_zero(&temp.im);
         } else {
             /* Backslash for scalars: a\b = b/a */
             apfc_div(&temp, &right, result);
@@ -2118,6 +2114,50 @@ static int parse_factor(apfc *result)
             apfc_sinh(result, &arg);
         } else if (str_eq(name, "cosh")) {
             apfc_cosh(result, &arg);
+        } else if (str_eq(name, "sech")) {
+            /* sech(x) = 1/cosh(x) */
+            apfc one, cosh_val;
+            apf_from_int(&one.re, 1);
+            apf_zero(&one.im);
+            apfc_cosh(&cosh_val, &arg);
+            apfc_div(result, &one, &cosh_val);
+        } else if (str_eq(name, "csch")) {
+            /* csch(x) = 1/sinh(x) */
+            apfc one, sinh_val;
+            apf_from_int(&one.re, 1);
+            apf_zero(&one.im);
+            apfc_sinh(&sinh_val, &arg);
+            apfc_div(result, &one, &sinh_val);
+        } else if (str_eq(name, "coth")) {
+            /* coth(x) = cosh(x)/sinh(x) */
+            apfc sinh_val, cosh_val;
+            apfc_sinh(&sinh_val, &arg);
+            apfc_cosh(&cosh_val, &arg);
+            apfc_div(result, &cosh_val, &sinh_val);
+        } else if (str_eq(name, "asech")) {
+            /* asech(x) = acosh(1/x) */
+            apf one, inv, tmp;
+            apf_from_int(&one, 1);
+            apf_div(&inv, &one, &arg.re);
+            apfx_acosh(&tmp, &inv);
+            result->re = tmp;
+            apf_zero(&result->im);
+        } else if (str_eq(name, "acsch")) {
+            /* acsch(x) = asinh(1/x) */
+            apf one, inv, tmp;
+            apf_from_int(&one, 1);
+            apf_div(&inv, &one, &arg.re);
+            apfx_asinh(&tmp, &inv);
+            result->re = tmp;
+            apf_zero(&result->im);
+        } else if (str_eq(name, "acoth")) {
+            /* acoth(x) = atanh(1/x) */
+            apf one, inv, tmp;
+            apf_from_int(&one, 1);
+            apf_div(&inv, &one, &arg.re);
+            apfx_atanh(&tmp, &inv);
+            result->re = tmp;
+            apf_zero(&result->im);
         } else if (str_eq(name, "atan") || str_eq(name, "arctan")) {
             /* atan for real numbers only (complex atan not implemented)
              * But allow NaN through - should return NaN */
@@ -2280,6 +2320,104 @@ static int parse_factor(apfc *result)
                 return 0;
             }
             apfx_fact(&result->re, n);
+            apf_zero(&result->im);
+        } else if (str_eq(name, "factorial2") || str_eq(name, "fact2")) {
+            /* Double factorial: n!! = n*(n-2)*(n-4)*... */
+            long n, i;
+            apf prod, tmp, step;
+            if (!apfc_is_real(&arg)) {
+                printf("Error: factorial2 requires real integer\n");
+                return 0;
+            }
+            n = apf_to_long(&arg.re);
+            if (n < 0 || n > 10000) {
+                printf("Error: factorial2 out of range\n");
+                return 0;
+            }
+            apf_from_int(&prod, 1);
+            apf_from_int(&step, 2);
+            for (i = n; i > 1; i -= 2) {
+                apf_from_int(&tmp, i);
+                apf_mul(&prod, &prod, &tmp);
+            }
+            result->re = prod;
+            apf_zero(&result->im);
+        } else if (str_eq(name, "fibonacci") || str_eq(name, "fib")) {
+            /* Fibonacci number F(n) */
+            long n, i;
+            apf a, b, tmp;
+            if (!apfc_is_real(&arg)) {
+                printf("Error: fibonacci requires real integer\n");
+                return 0;
+            }
+            n = apf_to_long(&arg.re);
+            if (n < 0 || n > 10000) {
+                printf("Error: fibonacci out of range\n");
+                return 0;
+            }
+            if (n == 0) {
+                apf_from_int(&result->re, 0);
+            } else {
+                apf_from_int(&a, 0);
+                apf_from_int(&b, 1);
+                for (i = 2; i <= n; i++) {
+                    apf_add(&tmp, &a, &b);
+                    a = b;
+                    b = tmp;
+                }
+                result->re = b;
+            }
+            apf_zero(&result->im);
+        } else if (str_eq(name, "lucas")) {
+            /* Lucas number L(n): L(0)=2, L(1)=1, L(n)=L(n-1)+L(n-2) */
+            long n, i;
+            apf a, b, tmp;
+            if (!apfc_is_real(&arg)) {
+                printf("Error: lucas requires real integer\n");
+                return 0;
+            }
+            n = apf_to_long(&arg.re);
+            if (n < 0 || n > 10000) {
+                printf("Error: lucas out of range\n");
+                return 0;
+            }
+            if (n == 0) {
+                apf_from_int(&result->re, 2);
+            } else if (n == 1) {
+                apf_from_int(&result->re, 1);
+            } else {
+                apf_from_int(&a, 2);
+                apf_from_int(&b, 1);
+                for (i = 2; i <= n; i++) {
+                    apf_add(&tmp, &a, &b);
+                    a = b;
+                    b = tmp;
+                }
+                result->re = b;
+            }
+            apf_zero(&result->im);
+        } else if (str_eq(name, "catalan")) {
+            /* Catalan number C(n) = (2n)! / ((n+1)! * n!) */
+            long n, i;
+            apf num, tmp;
+            if (!apfc_is_real(&arg)) {
+                printf("Error: catalan requires real integer\n");
+                return 0;
+            }
+            n = apf_to_long(&arg.re);
+            if (n < 0 || n > 500) {
+                printf("Error: catalan out of range\n");
+                return 0;
+            }
+            /* C(n) = prod(k=2 to n) of (n+k)/k */
+            apf_from_int(&num, 1);
+            for (i = 2; i <= n; i++) {
+                apf_from_int(&tmp, n + i);
+                apf_mul(&num, &num, &tmp);
+                apf_from_int(&tmp, i);
+                apf_div(&num, &num, &tmp);
+            }
+            result->re = num;
             apf_zero(&result->im);
         } else if (str_eq(name, "gamma") || str_eq(name, "tgamma")) {
             /* gamma function: Gamma(x) */
@@ -2581,7 +2719,7 @@ static int parse_factor(apfc *result)
             result_is_boolean = 1;
         } else if (str_eq(name, "mod")) {
             /* mod(a, b) - two argument function */
-            printf("Error: mod requires two arguments: mod(a, b) or use a %% b\n");
+            printf("Error: mod requires two arguments: mod(a, b)\n");
             return 0;
         } else if (str_eq(name, "print") || str_eq(name, "printdec")) {
             static char pbuf[512];
@@ -5637,8 +5775,8 @@ static int parse_value_factor(value_t *result)
                 return 1;
             }
             
-            /* linsolve(A, b) - solve linear system Ax = b */
-            if (str_eq(name, "linsolve")) {
+            /* linsolve(A, b) or mldivide(A, b) - solve linear system Ax = b */
+            if (str_eq(name, "linsolve") || str_eq(name, "mldivide")) {
                 value_t arg2;
                 
                 next_token();
@@ -6336,6 +6474,179 @@ static int parse_value_factor(value_t *result)
                 return 1;
             }
             
+            /* magic(n) - n-by-n magic square */
+            if (str_eq(name, "magic")) {
+                int n, i, j, r, c, num;
+                apfc n_arg;
+                
+                next_token();
+                if (!parse_expr(&n_arg)) return 0;
+                if (current_token.type != TOK_RPAREN) {
+                    printf("Error: expected ')'\n");
+                    return 0;
+                }
+                next_token();
+                
+                n = apf_to_long(&n_arg.re);
+                if (n < 1 || n > MAT_MAX_ROWS) {
+                    printf("Error: magic square size must be 1-%d\n", MAT_MAX_ROWS);
+                    return 0;
+                }
+                
+                result->type = VAL_MATRIX;
+                mat_zero(&result->v.matrix, n, n);
+                
+                if (n == 1) {
+                    apf_from_int(&MAT_AT(&result->v.matrix, 0, 0).re, 1);
+                } else if (n == 2) {
+                    /* No magic square for n=2, return [1,3;4,2] */
+                    apf_from_int(&MAT_AT(&result->v.matrix, 0, 0).re, 1);
+                    apf_from_int(&MAT_AT(&result->v.matrix, 0, 1).re, 3);
+                    apf_from_int(&MAT_AT(&result->v.matrix, 1, 0).re, 4);
+                    apf_from_int(&MAT_AT(&result->v.matrix, 1, 1).re, 2);
+                } else if (n % 2 == 1) {
+                    /* Siamese method for odd n */
+                    int nr, nc;
+                    r = 0;
+                    c = n / 2;
+                    for (num = 1; num <= n * n; num++) {
+                        apf_from_int(&MAT_AT(&result->v.matrix, r, c).re, num);
+                        nr = (r - 1 + n) % n;
+                        nc = (c + 1) % n;
+                        if (apf_to_long(&MAT_AT(&result->v.matrix, nr, nc).re) != 0) {
+                            r = (r + 1) % n;
+                        } else {
+                            r = nr;
+                            c = nc;
+                        }
+                    }
+                } else if (n % 4 == 0) {
+                    /* Doubly even (divisible by 4) */
+                    int ii, jj;
+                    long v;
+                    num = 1;
+                    for (i = 0; i < n; i++) {
+                        for (j = 0; j < n; j++) {
+                            apf_from_int(&MAT_AT(&result->v.matrix, i, j).re, num);
+                            num++;
+                        }
+                    }
+                    /* Swap on diagonals */
+                    for (i = 0; i < n; i++) {
+                        for (j = 0; j < n; j++) {
+                            ii = i % 4;
+                            jj = j % 4;
+                            if ((ii == jj) || (ii + jj == 3)) {
+                                v = apf_to_long(&MAT_AT(&result->v.matrix, i, j).re);
+                                apf_from_int(&MAT_AT(&result->v.matrix, i, j).re, n*n + 1 - v);
+                            }
+                        }
+                    }
+                } else {
+                    /* Singly even (n=6, 10, 14...) - LUX method simplified */
+                    int m = n / 2;
+                    int k = (n - 2) / 4;
+                    /* Build quadrants */
+                    for (i = 0; i < m; i++) {
+                        for (j = 0; j < m; j++) {
+                            /* Siamese on m-by-m */
+                            /* Simplified: just fill with pattern */
+                            apf_from_int(&MAT_AT(&result->v.matrix, i, j).re, 
+                                        (i * m + j + 1));
+                            apf_from_int(&MAT_AT(&result->v.matrix, i, j + m).re, 
+                                        (i * m + j + 1) + 2*m*m);
+                            apf_from_int(&MAT_AT(&result->v.matrix, i + m, j).re, 
+                                        (i * m + j + 1) + 3*m*m);
+                            apf_from_int(&MAT_AT(&result->v.matrix, i + m, j + m).re, 
+                                        (i * m + j + 1) + m*m);
+                        }
+                    }
+                    /* Swap columns for magic property */
+                    for (i = 0; i < m; i++) {
+                        for (j = 0; j < k; j++) {
+                            apfc tmp = MAT_AT(&result->v.matrix, i, j);
+                            MAT_AT(&result->v.matrix, i, j) = MAT_AT(&result->v.matrix, i + m, j);
+                            MAT_AT(&result->v.matrix, i + m, j) = tmp;
+                        }
+                    }
+                }
+                return 1;
+            }
+            
+            /* pascal(n) - n-by-n Pascal matrix (binomial coefficients) */
+            if (str_eq(name, "pascal")) {
+                int n, i, j;
+                apfc n_arg;
+                
+                next_token();
+                if (!parse_expr(&n_arg)) return 0;
+                if (current_token.type != TOK_RPAREN) {
+                    printf("Error: expected ')'\n");
+                    return 0;
+                }
+                next_token();
+                
+                n = apf_to_long(&n_arg.re);
+                if (n < 1 || n > MAT_MAX_ROWS) {
+                    printf("Error: pascal size must be 1-%d\n", MAT_MAX_ROWS);
+                    return 0;
+                }
+                
+                result->type = VAL_MATRIX;
+                mat_zero(&result->v.matrix, n, n);
+                
+                /* P(i,j) = C(i+j-2, i-1) for 1-based indexing */
+                /* P(i,j) = C(i+j, i) for 0-based */
+                for (i = 0; i < n; i++) {
+                    apf_from_int(&MAT_AT(&result->v.matrix, i, 0).re, 1);
+                    apf_from_int(&MAT_AT(&result->v.matrix, 0, i).re, 1);
+                }
+                for (i = 1; i < n; i++) {
+                    for (j = 1; j < n; j++) {
+                        apf sum;
+                        apf_add(&sum, 
+                               &MAT_AT(&result->v.matrix, i-1, j).re,
+                               &MAT_AT(&result->v.matrix, i, j-1).re);
+                        MAT_AT(&result->v.matrix, i, j).re = sum;
+                    }
+                }
+                return 1;
+            }
+            
+            /* hilb(n) - n-by-n Hilbert matrix */
+            if (str_eq(name, "hilb")) {
+                int n, i, j;
+                apfc n_arg;
+                
+                next_token();
+                if (!parse_expr(&n_arg)) return 0;
+                if (current_token.type != TOK_RPAREN) {
+                    printf("Error: expected ')'\n");
+                    return 0;
+                }
+                next_token();
+                
+                n = apf_to_long(&n_arg.re);
+                if (n < 1 || n > MAT_MAX_ROWS) {
+                    printf("Error: hilb size must be 1-%d\n", MAT_MAX_ROWS);
+                    return 0;
+                }
+                
+                result->type = VAL_MATRIX;
+                mat_zero(&result->v.matrix, n, n);
+                
+                /* H(i,j) = 1 / (i + j - 1) for 1-based = 1/(i+j+1) for 0-based */
+                for (i = 0; i < n; i++) {
+                    for (j = 0; j < n; j++) {
+                        apf num, denom;
+                        apf_from_int(&num, 1);
+                        apf_from_int(&denom, i + j + 1);
+                        apf_div(&MAT_AT(&result->v.matrix, i, j).re, &num, &denom);
+                    }
+                }
+                return 1;
+            }
+            
             /* compan(p) - companion matrix for polynomial p */
             if (str_eq(name, "compan")) {
                 int n, i;
@@ -6448,6 +6759,103 @@ static int parse_value_factor(value_t *result)
                 mat_zero(&result->v.matrix, 1, 2);
                 MAT_AT(&result->v.matrix, 0, 0).re = x;
                 MAT_AT(&result->v.matrix, 0, 1).re = y;
+                return 1;
+            }
+            
+            /* cart2sph(x, y, z) - Cartesian to spherical [azimuth, elevation, r] */
+            if (str_eq(name, "cart2sph")) {
+                apfc x_arg, y_arg, z_arg;
+                apf azimuth, elevation, r, x2, y2, z2, hypotxy, sum;
+                
+                next_token();
+                if (!parse_expr(&x_arg)) return 0;
+                if (current_token.type != TOK_COMMA) {
+                    printf("Error: cart2sph requires (x, y, z)\n");
+                    return 0;
+                }
+                next_token();
+                if (!parse_expr(&y_arg)) return 0;
+                if (current_token.type != TOK_COMMA) {
+                    printf("Error: cart2sph requires (x, y, z)\n");
+                    return 0;
+                }
+                next_token();
+                if (!parse_expr(&z_arg)) return 0;
+                if (current_token.type != TOK_RPAREN) {
+                    printf("Error: expected ')'\n");
+                    return 0;
+                }
+                next_token();
+                
+                /* azimuth = atan2(y, x) */
+                apfx_atan2(&azimuth, &y_arg.re, &x_arg.re);
+                
+                /* hypotxy = sqrt(x^2 + y^2) */
+                apf_mul(&x2, &x_arg.re, &x_arg.re);
+                apf_mul(&y2, &y_arg.re, &y_arg.re);
+                apf_add(&hypotxy, &x2, &y2);
+                apf_sqrt(&hypotxy, &hypotxy);
+                
+                /* elevation = atan2(z, hypotxy) */
+                apfx_atan2(&elevation, &z_arg.re, &hypotxy);
+                
+                /* r = sqrt(x^2 + y^2 + z^2) */
+                apf_mul(&z2, &z_arg.re, &z_arg.re);
+                apf_add(&sum, &x2, &y2);
+                apf_add(&sum, &sum, &z2);
+                apf_sqrt(&r, &sum);
+                
+                result->type = VAL_MATRIX;
+                mat_zero(&result->v.matrix, 1, 3);
+                MAT_AT(&result->v.matrix, 0, 0).re = azimuth;
+                MAT_AT(&result->v.matrix, 0, 1).re = elevation;
+                MAT_AT(&result->v.matrix, 0, 2).re = r;
+                return 1;
+            }
+            
+            /* sph2cart(azimuth, elevation, r) - Spherical to Cartesian [x, y, z] */
+            if (str_eq(name, "sph2cart")) {
+                apfc az_arg, el_arg, r_arg;
+                apf x, y, z, sin_az, cos_az, sin_el, cos_el, rcosel;
+                
+                next_token();
+                if (!parse_expr(&az_arg)) return 0;
+                if (current_token.type != TOK_COMMA) {
+                    printf("Error: sph2cart requires (azimuth, elevation, r)\n");
+                    return 0;
+                }
+                next_token();
+                if (!parse_expr(&el_arg)) return 0;
+                if (current_token.type != TOK_COMMA) {
+                    printf("Error: sph2cart requires (azimuth, elevation, r)\n");
+                    return 0;
+                }
+                next_token();
+                if (!parse_expr(&r_arg)) return 0;
+                if (current_token.type != TOK_RPAREN) {
+                    printf("Error: expected ')'\n");
+                    return 0;
+                }
+                next_token();
+                
+                apfx_sincos(&sin_az, &cos_az, &az_arg.re);
+                apfx_sincos(&sin_el, &cos_el, &el_arg.re);
+                
+                /* x = r * cos(el) * cos(az) */
+                apf_mul(&rcosel, &r_arg.re, &cos_el);
+                apf_mul(&x, &rcosel, &cos_az);
+                
+                /* y = r * cos(el) * sin(az) */
+                apf_mul(&y, &rcosel, &sin_az);
+                
+                /* z = r * sin(el) */
+                apf_mul(&z, &r_arg.re, &sin_el);
+                
+                result->type = VAL_MATRIX;
+                mat_zero(&result->v.matrix, 1, 3);
+                MAT_AT(&result->v.matrix, 0, 0).re = x;
+                MAT_AT(&result->v.matrix, 0, 1).re = y;
+                MAT_AT(&result->v.matrix, 0, 2).re = z;
                 return 1;
             }
             
@@ -7102,6 +7510,98 @@ static int parse_value_factor(value_t *result)
                 apf_add(&erf_val, &one, &erf_val);
                 apf_from_str(&half, "0.5");
                 apf_mul(&result->v.scalar.re, &erf_val, &half);
+                apf_zero(&result->v.scalar.im);
+                result->type = VAL_SCALAR;
+                return 1;
+            }
+            
+            /* norminv(p) - inverse standard normal CDF (quantile function) */
+            /* Uses Beasley-Springer-Moro approximation */
+            if (str_eq(name, "norminv") || str_eq(name, "normalinv") || str_eq(name, "probit")) {
+                apf p, t, c0, c1, c2, d1, d2, d3, num, den, half, one;
+                double pd;
+                
+                next_token();
+                if (!parse_expr(&pv_arg.v.scalar)) return 0;
+                if (current_token.type != TOK_RPAREN) {
+                    printf("Error: expected ')'\n");
+                    return 0;
+                }
+                next_token();
+                
+                p = pv_arg.v.scalar.re;
+                pd = apf_to_double(&p);
+                
+                if (pd <= 0.0 || pd >= 1.0) {
+                    if (pd <= 0.0) {
+                        apf_set_inf(&result->v.scalar.re, 1);  /* -Inf */
+                    } else {
+                        apf_set_inf(&result->v.scalar.re, 0);  /* +Inf */
+                    }
+                    apf_zero(&result->v.scalar.im);
+                    result->type = VAL_SCALAR;
+                    return 1;
+                }
+                
+                /* Rational approximation for central region */
+                apf_from_str(&half, "0.5");
+                apf_from_int(&one, 1);
+                
+                if (pd > 0.5) {
+                    apf_sub(&p, &one, &p);
+                    pd = 1.0 - pd;
+                }
+                
+                /* t = sqrt(-2*ln(p)) for p < 0.5 */
+                {
+                    apf ln_p, neg2, two;
+                    apf_from_int(&two, 2);
+                    apfx_log(&ln_p, &p);
+                    apf_neg(&neg2, &two);
+                    apf_mul(&t, &neg2, &ln_p);
+                    apf_sqrt(&t, &t);
+                }
+                
+                /* Approximation coefficients (Hastings) */
+                apf_from_str(&c0, "2.515517");
+                apf_from_str(&c1, "0.802853");
+                apf_from_str(&c2, "0.010328");
+                apf_from_str(&d1, "1.432788");
+                apf_from_str(&d2, "0.189269");
+                apf_from_str(&d3, "0.001308");
+                
+                /* num = c0 + c1*t + c2*t^2 */
+                {
+                    apf t2, tmp1, tmp2;
+                    apf_mul(&t2, &t, &t);
+                    apf_mul(&tmp1, &c1, &t);
+                    apf_mul(&tmp2, &c2, &t2);
+                    apf_add(&num, &c0, &tmp1);
+                    apf_add(&num, &num, &tmp2);
+                }
+                
+                /* den = 1 + d1*t + d2*t^2 + d3*t^3 */
+                {
+                    apf t2, t3, tmp1, tmp2, tmp3;
+                    apf_mul(&t2, &t, &t);
+                    apf_mul(&t3, &t2, &t);
+                    apf_mul(&tmp1, &d1, &t);
+                    apf_mul(&tmp2, &d2, &t2);
+                    apf_mul(&tmp3, &d3, &t3);
+                    apf_add(&den, &one, &tmp1);
+                    apf_add(&den, &den, &tmp2);
+                    apf_add(&den, &den, &tmp3);
+                }
+                
+                /* result = t - num/den */
+                apf_div(&num, &num, &den);
+                apf_sub(&result->v.scalar.re, &t, &num);
+                
+                /* Negate if original p <= 0.5 */
+                if (apf_to_double(&pv_arg.v.scalar.re) <= 0.5) {
+                    apf_neg(&result->v.scalar.re, &result->v.scalar.re);
+                }
+                
                 apf_zero(&result->v.scalar.im);
                 result->type = VAL_SCALAR;
                 return 1;
@@ -8033,7 +8533,7 @@ static int parse_value_term(value_t *result)
     if (!parse_value_unary(result)) return 0;
     
     while (current_token.type == TOK_MUL || current_token.type == TOK_DIV ||
-           current_token.type == TOK_MOD || current_token.type == TOK_BACKSLASH ||
+           current_token.type == TOK_BACKSLASH ||
            current_token.type == TOK_DOT_MUL || current_token.type == TOK_DOT_DIV) {
         
         int op = current_token.type;
@@ -8103,16 +8603,7 @@ static int parse_value_term(value_t *result)
                 printf("Error: invalid operand types for /\n");
                 return 0;
             }
-            } else if (op == TOK_MOD) {
-            /* Modulo for scalars only */
-            if (result->type == VAL_SCALAR && rhs_operand.type == VAL_SCALAR) {
-                apf_mod(&result->v.scalar.re, &result->v.scalar.re, &rhs_operand.v.scalar.re);
-                apf_zero(&result->v.scalar.im);
-            } else {
-                printf("Error: %% only works with scalars\n");
-                return 0;
-            }
-        } else if (op == TOK_BACKSLASH) {
+            } else if (op == TOK_BACKSLASH) {
             if (result->type == VAL_MATRIX && rhs_operand.type == VAL_MATRIX) {
                 if (!mat_mldivide(&pv_tmp_mat, &result->v.matrix, &rhs_operand.v.matrix)) {
                     return 0;
