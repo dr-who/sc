@@ -25,8 +25,18 @@ int mat_lu(matrix_t *L, matrix_t *U, int *perm, const matrix_t *m)
     mat_identity(L, n);
     for (i = 0; i < n; i++) perm[i] = i;
     
-    apf_from_int(&zero_thresh, 1);
-    zero_thresh.exp = -200;
+    /* Create very small threshold: 1e-30 */
+    {
+        apf ten;
+        int count;
+        apf_from_int(&zero_thresh, 1);
+        apf_from_int(&ten, 10);
+        for (count = 0; count < 30; count++) {
+            apf temp;
+            apf_div(&temp, &zero_thresh, &ten);
+            apf_copy(&zero_thresh, &temp);
+        }
+    }
     
     for (k = 0; k < n - 1; k++) {
         pivot_row = k;
@@ -546,8 +556,18 @@ int mat_qr(matrix_t *Q, matrix_t *R, const matrix_t *A)
     mat_zero(Q, n, n);
     mat_zero(R, n, n);
     
-    apf_from_int(&zero_thresh, 1);
-    zero_thresh.exp = -200;
+    /* Create very small threshold: 1e-30 */
+    {
+        apf ten;
+        int count;
+        apf_from_int(&zero_thresh, 1);
+        apf_from_int(&ten, 10);
+        for (count = 0; count < 30; count++) {
+            apf temp;
+            apf_div(&temp, &zero_thresh, &ten);
+            apf_copy(&zero_thresh, &temp);
+        }
+    }
     
     /* Modified Gram-Schmidt */
     for (j = 0; j < n; j++) {
@@ -654,11 +674,31 @@ int mat_eig(matrix_t *eigenvalues, const matrix_t *A)
     /* QR iteration */
     mat_copy(&T, A);
     
-    apf_from_int(&tolerance, 1);
-    tolerance.exp = -80;  /* Convergence threshold */
+    /* Create small tolerance: 1e-30 */
+    {
+        apf ten;
+        int cnt;
+        apf_from_int(&tolerance, 1);
+        apf_from_int(&ten, 10);
+        for (cnt = 0; cnt < 30; cnt++) {
+            apf tm;
+            apf_div(&tm, &tolerance, &ten);
+            apf_copy(&tolerance, &tm);
+        }
+    }
     
-    apf_from_int(&prev_norm, 1);
-    prev_norm.exp = 100;  /* Start with large value */
+    /* Create large prev_norm: 1e100 */
+    {
+        apf ten;
+        int cnt;
+        apf_from_int(&prev_norm, 1);
+        apf_from_int(&ten, 10);
+        for (cnt = 0; cnt < 100; cnt++) {
+            apf tm;
+            apf_mul(&tm, &prev_norm, &ten);
+            apf_copy(&prev_norm, &tm);
+        }
+    }
     
     for (iter = 0; iter < max_iter; iter++) {
         /* QR decomposition */
@@ -703,3 +743,468 @@ int mat_eig(matrix_t *eigenvalues, const matrix_t *A)
     
     return n;
 }
+
+/* ========== Cholesky Decomposition ========== */
+/* For symmetric positive-definite matrices: A = L * L^T */
+
+int mat_chol(matrix_t *L, const matrix_t *A)
+{
+    int i, j, k, n;
+    apfc sum, tmp, diag;
+    apf zero_val, test_val;
+    
+    if (!mat_is_square(A)) {
+        printf("Error: Cholesky requires square matrix\n");
+        return 0;
+    }
+    
+    n = A->rows;
+    mat_zero(L, n, n);
+    
+    apf_zero(&zero_val);
+    
+    for (i = 0; i < n; i++) {
+        for (j = 0; j <= i; j++) {
+            apfc_zero(&sum);
+            
+            if (j == i) {
+                /* Diagonal element: L[i][i] = sqrt(A[i][i] - sum(L[i][k]^2)) */
+                for (k = 0; k < j; k++) {
+                    apfc sq;
+                    apfc_mul(&sq, &MAT_AT(L, i, k), &MAT_AT(L, i, k));
+                    apfc_add(&sum, &sum, &sq);
+                }
+                apfc_sub(&diag, &MAT_AT(A, i, i), &sum);
+                
+                /* Check if positive (matrix must be positive definite) */
+                apfc_abs(&test_val, &diag);
+                if (diag.re.sign || apf_lt(&test_val, &zero_val)) {
+                    printf("Error: matrix is not positive definite\n");
+                    return 0;
+                }
+                
+                apfc_sqrt(&MAT_AT(L, i, j), &diag);
+            } else {
+                /* Off-diagonal: L[i][j] = (A[i][j] - sum(L[i][k]*L[j][k])) / L[j][j] */
+                for (k = 0; k < j; k++) {
+                    apfc prod;
+                    apfc_mul(&prod, &MAT_AT(L, i, k), &MAT_AT(L, j, k));
+                    apfc_add(&sum, &sum, &prod);
+                }
+                apfc_sub(&tmp, &MAT_AT(A, i, j), &sum);
+                apfc_div(&MAT_AT(L, i, j), &tmp, &MAT_AT(L, j, j));
+            }
+        }
+    }
+    
+    return 1;
+}
+
+/* ========== Singular Value Decomposition (SVD) ========== */
+/* A = U * S * V^T where U, V are orthogonal, S is diagonal */
+/* Uses iterative method for general matrices */
+
+int mat_svd(matrix_t *U, matrix_t *S, matrix_t *V, const matrix_t *A)
+{
+    int m, n, min_mn;
+    int i, j, iter;
+    int max_iter;
+    matrix_t AtA;
+    matrix_t Q, R;
+    matrix_t tmp, tmp2;
+    matrix_t At;
+    apf tolerance, off_norm, sum, abs_val;
+    
+    m = A->rows;
+    n = A->cols;
+    min_mn = (m < n) ? m : n;
+    max_iter = 200;
+    
+    /* Special case: 2x2 - compute full SVD analytically */
+    if (m == 2 && n == 2) {
+        apfc a, b, c, d;
+        apf aa, bb, cc, dd, ab, cd, ac, bd;
+        apf sum1, sum2, diff1, diff2, prod1, prod2;
+        apf s1_sq, s2_sq, s1, s2;
+        apf theta, ct, st;
+        apf tmp_r, two;
+        
+        /* A = [[a,b],[c,d]] */
+        a = MAT_AT(A, 0, 0);
+        b = MAT_AT(A, 0, 1);
+        c = MAT_AT(A, 1, 0);
+        d = MAT_AT(A, 1, 1);
+        
+        /* For real matrices, use explicit formulas */
+        /* A^T*A = [[a²+c², ab+cd], [ab+cd, b²+d²]] */
+        apf_mul(&aa, &a.re, &a.re);
+        apf_mul(&bb, &b.re, &b.re);
+        apf_mul(&cc, &c.re, &c.re);
+        apf_mul(&dd, &d.re, &d.re);
+        apf_mul(&ab, &a.re, &b.re);
+        apf_mul(&cd, &c.re, &d.re);
+        apf_mul(&ac, &a.re, &c.re);
+        apf_mul(&bd, &b.re, &d.re);
+        
+        /* sum1 = a²+c², sum2 = b²+d² */
+        apf_add(&sum1, &aa, &cc);
+        apf_add(&sum2, &bb, &dd);
+        
+        /* prod1 = ab+cd */
+        apf_add(&prod1, &ab, &cd);
+        
+        /* Eigenvalues of A^T*A: ((sum1+sum2) ± sqrt((sum1-sum2)²+4*prod1²))/2 */
+        apf_add(&tmp_r, &sum1, &sum2);  /* sum1+sum2 */
+        apf_sub(&diff1, &sum1, &sum2);  /* sum1-sum2 */
+        apf_mul(&diff2, &diff1, &diff1); /* (sum1-sum2)² */
+        apf_mul(&prod2, &prod1, &prod1); /* prod1² */
+        apf_from_int(&two, 4);
+        apf_mul(&prod2, &prod2, &two);   /* 4*prod1² */
+        apf_add(&diff2, &diff2, &prod2); /* (sum1-sum2)²+4*prod1² */
+        apf_sqrt(&diff2, &diff2);        /* sqrt(...) */
+        
+        apf_from_int(&two, 2);
+        apf_add(&s1_sq, &tmp_r, &diff2);
+        apf_div(&s1_sq, &s1_sq, &two);   /* larger eigenvalue */
+        apf_sub(&s2_sq, &tmp_r, &diff2);
+        apf_div(&s2_sq, &s2_sq, &two);   /* smaller eigenvalue */
+        
+        /* Singular values */
+        if (apf_is_neg(&s1_sq)) apf_zero(&s1_sq);
+        if (apf_is_neg(&s2_sq)) apf_zero(&s2_sq);
+        apf_sqrt(&s1, &s1_sq);
+        apf_sqrt(&s2, &s2_sq);
+        
+        /* Set S */
+        mat_zero(S, 2, 2);
+        MAT_AT(S, 0, 0).re = s1;
+        MAT_AT(S, 1, 1).re = s2;
+        
+        /* Compute angle for V (eigenvectors of A^T*A) */
+        /* theta = 0.5 * atan2(2*prod1, sum1-sum2) */
+        apf_from_int(&two, 2);
+        apf_mul(&tmp_r, &prod1, &two);  /* 2*prod1 */
+        apfx_atan2(&theta, &tmp_r, &diff1);
+        apf_div(&theta, &theta, &two);
+        
+        apfx_cos(&ct, &theta);
+        apfx_sin(&st, &theta);
+        
+        /* V = [[cos,-sin],[sin,cos]] */
+        mat_zero(V, 2, 2);
+        MAT_AT(V, 0, 0).re = ct;
+        apf_neg(&MAT_AT(V, 0, 1).re, &st);
+        MAT_AT(V, 1, 0).re = st;
+        MAT_AT(V, 1, 1).re = ct;
+        
+        /* Compute U = A*V*S^(-1) */
+        /* u1 = (1/s1) * A * v1, u2 = (1/s2) * A * v2 */
+        mat_zero(U, 2, 2);
+        
+        if (!apf_iszero(&s1)) {
+            /* U[:,0] = (A * V[:,0]) / s1 */
+            apf u00, u10, tmp1, tmp2r;
+            apf_mul(&tmp1, &a.re, &ct);
+            apf_mul(&tmp2r, &b.re, &st);
+            apf_add(&u00, &tmp1, &tmp2r);
+            apf_div(&MAT_AT(U, 0, 0).re, &u00, &s1);
+            
+            apf_mul(&tmp1, &c.re, &ct);
+            apf_mul(&tmp2r, &d.re, &st);
+            apf_add(&u10, &tmp1, &tmp2r);
+            apf_div(&MAT_AT(U, 1, 0).re, &u10, &s1);
+        }
+        
+        if (!apf_iszero(&s2)) {
+            /* U[:,1] = (A * V[:,1]) / s2 */
+            apf u01, u11, tmp1, tmp2r, neg_st;
+            apf_neg(&neg_st, &st);
+            
+            apf_mul(&tmp1, &a.re, &neg_st);
+            apf_mul(&tmp2r, &b.re, &ct);
+            apf_add(&u01, &tmp1, &tmp2r);
+            apf_div(&MAT_AT(U, 0, 1).re, &u01, &s2);
+            
+            apf_mul(&tmp1, &c.re, &neg_st);
+            apf_mul(&tmp2r, &d.re, &ct);
+            apf_add(&u11, &tmp1, &tmp2r);
+            apf_div(&MAT_AT(U, 1, 1).re, &u11, &s2);
+        } else {
+            /* If s2=0, set U[:,1] to orthogonal complement of U[:,0] */
+            MAT_AT(U, 0, 1).re = MAT_AT(U, 1, 0).re;
+            apf_neg(&MAT_AT(U, 1, 1).re, &MAT_AT(U, 0, 0).re);
+        }
+        
+        return 1;
+    }
+    
+    /* Compute A^T * A for eigenvalues -> singular values */
+    mat_transpose(&At, A);
+    mat_mul(&AtA, &At, A);  /* n x n */
+    
+    /* Initialize V with identity */
+    mat_identity(V, n);
+    
+    /* Create small tolerance: 1e-30 */
+    {
+        apf ten;
+        int cnt;
+        apf_from_int(&tolerance, 1);
+        apf_from_int(&ten, 10);
+        for (cnt = 0; cnt < 30; cnt++) {
+            apf tm;
+            apf_div(&tm, &tolerance, &ten);
+            apf_copy(&tolerance, &tm);
+        }
+    }
+    
+    /* Power iteration on A^T * A to get V */
+    mat_copy(&tmp, &AtA);
+    for (iter = 0; iter < max_iter; iter++) {
+        if (!mat_qr(&Q, &R, &tmp)) break;
+        
+        /* Update V */
+        mat_mul(&tmp2, V, &Q);
+        mat_copy(V, &tmp2);
+        
+        /* tmp = R * Q (similar transformation) */
+        mat_mul(&tmp2, &R, &Q);
+        mat_copy(&tmp, &tmp2);
+        
+        /* Check convergence */
+        apf_zero(&off_norm);
+        for (i = 0; i < n; i++) {
+            for (j = 0; j < n; j++) {
+                if (i != j) {
+                    apfc_abs(&abs_val, &MAT_AT(&tmp, i, j));
+                    apf_add(&sum, &off_norm, &abs_val);
+                    off_norm = sum;
+                }
+            }
+        }
+        if (apf_lt(&off_norm, &tolerance)) break;
+    }
+    
+    /* Singular values are square roots of diagonal of converged matrix */
+    mat_zero(S, m, n);
+    for (i = 0; i < min_mn; i++) {
+        apfc sv;
+        apfc_abs(&sv.re, &MAT_AT(&tmp, i, i));
+        apf_sqrt(&sv.re, &sv.re);
+        apf_zero(&sv.im);
+        MAT_AT(S, i, i) = sv;
+    }
+    
+    /* Compute U = A * V * S^(-1) */
+    mat_mul(&tmp, A, V);
+    mat_zero(U, m, m);
+    for (i = 0; i < m; i++) {
+        for (j = 0; j < min_mn; j++) {
+            apf sv_val;
+            apfc_abs(&sv_val, &MAT_AT(S, j, j));
+            if (!apf_iszero(&sv_val)) {
+                apfc_div(&MAT_AT(U, i, j), &MAT_AT(&tmp, i, j), &MAT_AT(S, j, j));
+            }
+        }
+    }
+    
+    /* Complete U to orthonormal basis (simplified - just set remaining to identity) */
+    for (i = min_mn; i < m; i++) {
+        apf_from_int(&MAT_AT(U, i, i).re, 1);
+        apf_zero(&MAT_AT(U, i, i).im);
+    }
+    
+    return 1;
+}
+
+/* ========== Null Space ========== */
+/* Returns basis vectors for null space of A */
+
+int mat_null(matrix_t *N, const matrix_t *A)
+{
+    matrix_t R;
+    int m, n, i, j, k;
+    int rank_val, null_dim;
+    int pivot_cols[MAT_MAX_COLS];
+    int free_cols[MAT_MAX_COLS];
+    int num_pivots, num_free;
+    int pivot_row;
+    apf thresh, abs_pivot, abs_test;
+    apfc factor, prod;
+    
+    m = A->rows;
+    n = A->cols;
+    
+    /* Copy A to R for row reduction */
+    mat_copy(&R, A);
+    
+    /* Very small threshold for zero detection: 1e-30 */
+    {
+        apf ten;
+        int cnt;
+        apf_from_int(&thresh, 1);
+        apf_from_int(&ten, 10);
+        for (cnt = 0; cnt < 30; cnt++) {
+            apf tm;
+            apf_div(&tm, &thresh, &ten);
+            apf_copy(&thresh, &tm);
+        }
+    }
+    
+    /* Perform Gaussian elimination to get row echelon form */
+    pivot_row = 0;
+    num_pivots = 0;
+    
+    for (j = 0; j < n && pivot_row < m; j++) {
+        /* Find pivot in column j */
+        int best_row = -1;
+        apf_zero(&abs_pivot);
+        
+        for (i = pivot_row; i < m; i++) {
+            apfc_abs(&abs_test, &MAT_AT(&R, i, j));
+            if (apf_gt(&abs_test, &abs_pivot)) {
+                abs_pivot = abs_test;
+                best_row = i;
+            }
+        }
+        
+        if (best_row < 0 || apf_lt(&abs_pivot, &thresh)) {
+            /* No pivot in this column - it's a free variable */
+            continue;
+        }
+        
+        /* Swap rows if needed */
+        if (best_row != pivot_row) {
+            for (k = 0; k < n; k++) {
+                apfc tmp = MAT_AT(&R, pivot_row, k);
+                MAT_AT(&R, pivot_row, k) = MAT_AT(&R, best_row, k);
+                MAT_AT(&R, best_row, k) = tmp;
+            }
+        }
+        
+        /* Scale pivot row to make pivot = 1 */
+        {
+            apfc pivot_val = MAT_AT(&R, pivot_row, j);
+            for (k = j; k < n; k++) {
+                apfc_div(&MAT_AT(&R, pivot_row, k), &MAT_AT(&R, pivot_row, k), &pivot_val);
+            }
+        }
+        
+        /* Eliminate other rows */
+        for (i = 0; i < m; i++) {
+            if (i != pivot_row) {
+                factor = MAT_AT(&R, i, j);
+                for (k = j; k < n; k++) {
+                    apfc_mul(&prod, &factor, &MAT_AT(&R, pivot_row, k));
+                    apfc_sub(&MAT_AT(&R, i, k), &MAT_AT(&R, i, k), &prod);
+                }
+            }
+        }
+        
+        pivot_cols[num_pivots++] = j;
+        pivot_row++;
+    }
+    
+    /* Identify free columns */
+    num_free = 0;
+    {
+        int p = 0;
+        for (j = 0; j < n; j++) {
+            if (p < num_pivots && pivot_cols[p] == j) {
+                p++;
+            } else {
+                free_cols[num_free++] = j;
+            }
+        }
+    }
+    
+    rank_val = num_pivots;
+    null_dim = n - rank_val;
+    
+    if (null_dim == 0) {
+        /* Null space is trivial (only zero vector) */
+        mat_zero(N, n, 1);
+        return 0;
+    }
+    
+    /* Build null space basis: one vector per free variable */
+    mat_zero(N, n, null_dim);
+    
+    for (k = 0; k < null_dim; k++) {
+        int fc = free_cols[k];
+        
+        /* Set free variable to 1 */
+        apf_from_int(&MAT_AT(N, fc, k).re, 1);
+        apf_zero(&MAT_AT(N, fc, k).im);
+        
+        /* Set pivot variables from RREF */
+        for (i = 0; i < num_pivots; i++) {
+            int pc = pivot_cols[i];
+            /* N[pc, k] = -R[i, fc] */
+            apfc_neg(&MAT_AT(N, pc, k), &MAT_AT(&R, i, fc));
+        }
+    }
+    
+    return null_dim;
+}
+
+/* ========== Schur Decomposition ========== */
+/* A = Q * T * Q^T where Q is orthogonal, T is upper triangular */
+
+int mat_schur(matrix_t *Q, matrix_t *T, const matrix_t *A)
+{
+    int n, i, iter, max_iter;
+    matrix_t Qk, R;
+    matrix_t tmp;
+    apf off_norm, sum, abs_val, tolerance;
+    
+    if (!mat_is_square(A)) {
+        printf("Error: Schur decomposition requires square matrix\n");
+        return 0;
+    }
+    
+    n = A->rows;
+    max_iter = 300;
+    
+    mat_copy(T, A);
+    mat_identity(Q, n);
+    
+    /* Create small tolerance: 1e-30 */
+    {
+        apf ten;
+        int cnt;
+        apf_from_int(&tolerance, 1);
+        apf_from_int(&ten, 10);
+        for (cnt = 0; cnt < 30; cnt++) {
+            apf tm;
+            apf_div(&tm, &tolerance, &ten);
+            apf_copy(&tolerance, &tm);
+        }
+    }
+    
+    /* QR iteration */
+    for (iter = 0; iter < max_iter; iter++) {
+        if (!mat_qr(&Qk, &R, T)) break;
+        
+        /* T = R * Qk */
+        mat_mul(&tmp, &R, &Qk);
+        mat_copy(T, &tmp);
+        
+        /* Q = Q * Qk */
+        mat_mul(&tmp, Q, &Qk);
+        mat_copy(Q, &tmp);
+        
+        /* Check convergence (sub-diagonal elements) */
+        apf_zero(&off_norm);
+        for (i = 1; i < n; i++) {
+            apfc_abs(&abs_val, &MAT_AT(T, i, i-1));
+            apf_add(&sum, &off_norm, &abs_val);
+            off_norm = sum;
+        }
+        
+        if (apf_lt(&off_norm, &tolerance)) break;
+    }
+    
+    return 1;
+}
+

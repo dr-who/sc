@@ -74,6 +74,8 @@ void apfx_poisscdf(apf *r, long k, const apf *lambda);    /* Poisson CDF */
 /* Bessel functions - First kind */
 void apfx_j0(apf *r, const apf *x);       /* Bessel J_0(x) */
 void apfx_j1(apf *r, const apf *x);       /* Bessel J_1(x) */
+void apfx_besselj(apf *r, int n, const apf *x); /* Bessel J_n(x) for integer n */
+void apfx_bessely(apf *r, int n, const apf *x); /* Bessel Y_n(x) for integer n */
 
 /* Bessel functions - Second kind (Neumann functions) */
 void apfx_y0(apf *r, const apf *x);       /* Bessel Y_0(x) */
@@ -106,5 +108,21 @@ void apfx_betainc(apf *r, const apf *x, const apf *a, const apf *b); /* Regulari
 
 /* Incomplete gamma (for distributions) */
 void apfx_gammainc(apf *r, const apf *a, const apf *x); /* Regularized lower incomplete gamma P(a,x) */
+
+/* Digamma (psi) function */
+void apfx_digamma(apf *r, const apf *x);  /* psi(x) = d/dx ln(Gamma(x)) */
+
+/* Riemann zeta function */
+void apfx_zeta(apf *r, const apf *s);     /* zeta(s) for s > 1 */
+
+/* Harmonic numbers */
+void apfx_harmonic(apf *r, long n);       /* H_n = 1 + 1/2 + ... + 1/n */
+void apfx_harmonic_gen(apf *r, long n, long m); /* H_{n,m} = sum 1/k^m */
+
+/* Pochhammer symbol (rising factorial) */
+void apfx_pochhammer(apf *r, const apf *x, long n); /* (x)_n */
+
+/* Falling factorial */
+void apfx_falling(apf *r, const apf *x, long n); /* x^(n) */
 
 #endif /* APFX_H */

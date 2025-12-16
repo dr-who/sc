@@ -125,6 +125,18 @@ int mat_qr(matrix_t *Q, matrix_t *R, const matrix_t *A);
 /* ========== Eigenvalues (matrix_linalg.c) ========== */
 int mat_eig(matrix_t *eigenvalues, const matrix_t *A);
 
+/* ========== Cholesky Decomposition (matrix_linalg.c) ========== */
+int mat_chol(matrix_t *L, const matrix_t *A);
+
+/* ========== Full SVD (matrix_linalg.c) ========== */
+int mat_svd(matrix_t *U, matrix_t *S, matrix_t *V, const matrix_t *A);
+
+/* ========== Null Space (matrix_linalg.c) ========== */
+int mat_null(matrix_t *N, const matrix_t *A);
+
+/* ========== Schur Decomposition (matrix_linalg.c) ========== */
+int mat_schur(matrix_t *Q, matrix_t *T, const matrix_t *A);
+
 /* ========== Concatenation (matrix_ops.c) ========== */
 int mat_hcat(matrix_t *r, const matrix_t *a, const matrix_t *b);
 int mat_vcat(matrix_t *r, const matrix_t *a, const matrix_t *b);

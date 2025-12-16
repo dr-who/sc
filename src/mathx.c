@@ -133,6 +133,411 @@ int prime_factors(long n, long *factors, int max_factors) {
     return count;
 }
 
+/* nth prime number (1-indexed: nthprime(1)=2, nthprime(2)=3, ...) */
+long nthprime_long(long n) {
+    long count = 0, candidate = 1;
+    if (n <= 0) return 0;
+    if (n == 1) return 2;
+    while (count < n) {
+        candidate++;
+        if (is_prime_long(candidate)) count++;
+    }
+    return candidate;
+}
+
+/* Smallest prime >= n */
+long nextprime_long(long n) {
+    if (n <= 2) return 2;
+    if (n % 2 == 0) n++;
+    while (!is_prime_long(n)) n += 2;
+    return n;
+}
+
+/* Largest prime <= n, or 0 if n < 2 */
+long prevprime_long(long n) {
+    if (n < 2) return 0;
+    if (n == 2) return 2;
+    if (n % 2 == 0) n--;
+    while (n >= 2 && !is_prime_long(n)) n -= 2;
+    return (n >= 2) ? n : 0;
+}
+
+/* Count of primes <= n */
+long primepi_long(long n) {
+    long count = 0, i;
+    if (n < 2) return 0;
+    count = 1;  /* 2 is prime */
+    for (i = 3; i <= n; i += 2) {
+        if (is_prime_long(i)) count++;
+    }
+    return count;
+}
+
+/* Product of distinct prime factors (radical) */
+long radical_long(long n) {
+    long result = 1, d = 2;
+    if (n < 0) n = -n;
+    if (n <= 1) return n;
+    while (d * d <= n) {
+        if (n % d == 0) {
+            result *= d;
+            while (n % d == 0) n /= d;
+        }
+        d++;
+    }
+    if (n > 1) result *= n;
+    return result;
+}
+
+/* Count of distinct prime factors (omega) */
+long omega_long(long n) {
+    long count = 0, d = 2;
+    if (n < 0) n = -n;
+    if (n <= 1) return 0;
+    while (d * d <= n) {
+        if (n % d == 0) {
+            count++;
+            while (n % d == 0) n /= d;
+        }
+        d++;
+    }
+    if (n > 1) count++;
+    return count;
+}
+
+/* Count of prime factors with multiplicity (bigomega/Omega) */
+long bigomega_long(long n) {
+    long count = 0, d = 2;
+    if (n < 0) n = -n;
+    if (n <= 1) return 0;
+    while (d * d <= n) {
+        while (n % d == 0) {
+            count++;
+            n /= d;
+        }
+        d++;
+    }
+    if (n > 1) count++;
+    return count;
+}
+
+/* Is squarefree (no repeated prime factors)? */
+int issquarefree_long(long n) {
+    long d = 2;
+    if (n < 0) n = -n;
+    if (n <= 1) return (n == 1);
+    while (d * d <= n) {
+        if (n % d == 0) {
+            n /= d;
+            if (n % d == 0) return 0;  /* d^2 divides original n */
+        }
+        d++;
+    }
+    return 1;
+}
+
+/* Möbius function: 0 if n has squared prime factor, (-1)^k if k distinct primes */
+int moebius_long(long n) {
+    long count = 0, d = 2;
+    if (n < 0) n = -n;
+    if (n == 1) return 1;
+    while (d * d <= n) {
+        if (n % d == 0) {
+            n /= d;
+            if (n % d == 0) return 0;  /* Squared factor */
+            count++;
+        }
+        d++;
+    }
+    if (n > 1) count++;
+    return (count % 2 == 0) ? 1 : -1;
+}
+
+/* Euler's totient function */
+long totient_long(long n) {
+    long result = n, p = 2;
+    if (n <= 0) return 0;
+    while (p * p <= n) {
+        if (n % p == 0) {
+            while (n % p == 0) n /= p;
+            result -= result / p;
+        }
+        p++;
+    }
+    if (n > 1) result -= result / n;
+    return result;
+}
+
+/* Sum of divisors (sigma function) */
+long sigma_long(long n, int k) {
+    long result = 0, d, pk;
+    if (n <= 0) return 0;
+    for (d = 1; d * d <= n; d++) {
+        if (n % d == 0) {
+            /* Compute d^k */
+            pk = 1;
+            if (k > 0) { long i; for (i = 0; i < k; i++) pk *= d; }
+            result += pk;
+            if (d != n / d) {
+                pk = 1;
+                if (k > 0) { long i, dd = n/d; for (i = 0; i < k; i++) pk *= dd; }
+                result += pk;
+            }
+        }
+    }
+    return result;
+}
+
+/* Number of divisors (sigma_0) */
+long numdivisors_long(long n) {
+    return sigma_long(n, 0);
+}
+
+/* Sum of digits in base 10 */
+long digsum_long(long n) {
+    long sum = 0;
+    if (n < 0) n = -n;
+    while (n > 0) {
+        sum += n % 10;
+        n /= 10;
+    }
+    return sum;
+}
+
+/* Number of digits in base 10 */
+long numdigits_long(long n) {
+    long count = 0;
+    if (n == 0) return 1;
+    if (n < 0) n = -n;
+    while (n > 0) {
+        count++;
+        n /= 10;
+    }
+    return count;
+}
+
+/* Digital root (repeated digit sum until single digit) */
+long digitalroot_long(long n) {
+    if (n < 0) n = -n;
+    if (n == 0) return 0;
+    return 1 + (n - 1) % 9;
+}
+
+/* Reverse digits */
+long reverse_long(long n) {
+    long rev = 0, sign = 1;
+    if (n < 0) { sign = -1; n = -n; }
+    while (n > 0) {
+        rev = rev * 10 + n % 10;
+        n /= 10;
+    }
+    return rev * sign;
+}
+
+/* Is palindrome? */
+int ispalindrome_long(long n) {
+    if (n < 0) return 0;
+    return n == reverse_long(n);
+}
+
+/* Is perfect number? (sum of proper divisors == n) */
+int isperfect_long(long n) {
+    return (n > 0 && sigma_long(n, 1) - n == n);
+}
+
+/* Is abundant? (sum of proper divisors > n) */
+int isabundant_long(long n) {
+    return (n > 0 && sigma_long(n, 1) - n > n);
+}
+
+/* Is deficient? (sum of proper divisors < n) */
+int isdeficient_long(long n) {
+    return (n > 0 && sigma_long(n, 1) - n < n);
+}
+
+/* nth triangular number = n*(n+1)/2 */
+long triangular_long(long n) {
+    return (n >= 0) ? n * (n + 1) / 2 : 0;
+}
+
+/* Is triangular? */
+int istriangular_long(long n) {
+    /* n is triangular if 8n+1 is a perfect square */
+    long t, s;
+    if (n < 0) return 0;
+    t = 8 * n + 1;
+    s = 1;
+    while (s * s < t) s++;
+    return (s * s == t);
+}
+
+/* nth square number = n^2 */
+long square_long(long n) {
+    return n * n;
+}
+
+/* Is perfect square? */
+int issquare_long(long n) {
+    long s;
+    if (n < 0) return 0;
+    s = 1;
+    while (s * s < n) s++;
+    return (s * s == n);
+}
+
+/* nth pentagonal number = n*(3n-1)/2 */
+long pentagonal_long(long n) {
+    return (n >= 0) ? n * (3 * n - 1) / 2 : 0;
+}
+
+/* nth hexagonal number = n*(2n-1) */
+long hexagonal_long(long n) {
+    return (n >= 0) ? n * (2 * n - 1) : 0;
+}
+
+/* Is perfect power? (n = a^b for some a, b >= 2) */
+int ispower_long(long n) {
+    long b, a, t;
+    if (n < 0) n = -n;
+    if (n <= 1) return 0;
+    for (b = 2; b <= 40; b++) {  /* 2^40 > 10^12 */
+        a = 2;
+        t = 1;
+        while (t < n) {
+            long i;
+            t = 1;
+            for (i = 0; i < b; i++) t *= a;
+            if (t == n) return 1;
+            a++;
+        }
+    }
+    return 0;
+}
+
+/* Subfactorial / derangements !n */
+void apf_subfactorial(apf *r, long n) {
+    /* !n = n! * sum(k=0 to n) of (-1)^k / k!
+     * Recurrence: !n = (n-1) * (!(n-1) + !(n-2)), !0 = 1, !1 = 0 */
+    long i;
+    apf a, b, tmp, tmp2, n_minus_1;
+    if (n < 0) { apf_zero(r); return; }
+    if (n == 0) { apf_from_int(r, 1); return; }
+    if (n == 1) { apf_from_int(r, 0); return; }
+    
+    apf_from_int(&a, 1);  /* !0 = 1 */
+    apf_from_int(&b, 0);  /* !1 = 0 */
+    for (i = 2; i <= n; i++) {
+        apf_from_int(&n_minus_1, i - 1);
+        apf_add(&tmp, &a, &b);
+        apf_mul(&tmp2, &n_minus_1, &tmp);
+        a = b;
+        b = tmp2;
+    }
+    *r = b;
+}
+
+/* Bell numbers B(n) = number of partitions of set of n elements */
+void apf_bell(apf *r, long n) {
+    /* Bell triangle method */
+    apf row[101];  /* Support up to n=100 */
+    long i, j;
+    if (n < 0 || n > 100) { apf_from_int(r, 0); return; }
+    if (n == 0) { apf_from_int(r, 1); return; }
+    
+    apf_from_int(&row[0], 1);
+    for (i = 1; i <= n; i++) {
+        /* row[0] = previous row's last element */
+        apf prev_last = row[i-1];
+        row[0] = prev_last;
+        for (j = 1; j <= i; j++) {
+            apf_add(&row[j], &row[j-1], &row[j-1]);
+            /* Actually: row[j] = row[j-1] + old_row[j-1] 
+             * Need proper Bell triangle calculation */
+        }
+    }
+    /* Simplified: use recurrence B(n) = sum(k=0..n-1) C(n-1,k) * B(k) */
+    {
+        apf bells[101], sum, comb, tmp;
+        apf_from_int(&bells[0], 1);
+        for (i = 1; i <= n; i++) {
+            apf_from_int(&sum, 0);
+            for (j = 0; j < i; j++) {
+                apf_ncr(&comb, i - 1, j);
+                apf_mul(&tmp, &comb, &bells[j]);
+                apf_add(&sum, &sum, &tmp);
+            }
+            bells[i] = sum;
+        }
+        *r = bells[n];
+    }
+}
+
+/* Stirling numbers of the second kind S(n,k) */
+void apf_stirling2(apf *r, long n, long k) {
+    /* S(n,k) = k*S(n-1,k) + S(n-1,k-1) */
+    /* S(n,0) = 0 for n>0, S(0,0) = 1, S(n,n) = 1 */
+    apf S[101][101];
+    long i, j;
+    if (n < 0 || k < 0 || k > n || n > 100) { apf_from_int(r, 0); return; }
+    
+    for (i = 0; i <= n; i++) {
+        for (j = 0; j <= k; j++) {
+            if (i == 0 && j == 0) {
+                apf_from_int(&S[i][j], 1);
+            } else if (j == 0) {
+                apf_from_int(&S[i][j], 0);
+            } else if (i == j) {
+                apf_from_int(&S[i][j], 1);
+            } else if (j > i) {
+                apf_from_int(&S[i][j], 0);
+            } else {
+                apf tmp1, tmp2, kval;
+                apf_from_int(&kval, j);
+                apf_mul(&tmp1, &kval, &S[i-1][j]);
+                apf_add(&tmp2, &tmp1, &S[i-1][j-1]);
+                S[i][j] = tmp2;
+            }
+        }
+    }
+    *r = S[n][k];
+}
+
+/* Partition function p(n) - number of ways to write n as sum of positive integers */
+void apf_partition(apf *r, long n) {
+    /* Using pentagonal number theorem recurrence */
+    apf p[1001];
+    long i, k, pent;
+    int sign;
+    if (n < 0 || n > 1000) { apf_from_int(r, 0); return; }
+    
+    apf_from_int(&p[0], 1);
+    for (i = 1; i <= n; i++) {
+        apf sum;
+        apf_from_int(&sum, 0);
+        for (k = 1; ; k++) {
+            /* Generalized pentagonal: k(3k-1)/2 and k(3k+1)/2 */
+            pent = k * (3*k - 1) / 2;
+            if (pent > i) break;
+            sign = (k % 2 == 1) ? 1 : -1;
+            if (sign > 0) {
+                apf_add(&sum, &sum, &p[i - pent]);
+            } else {
+                apf_sub(&sum, &sum, &p[i - pent]);
+            }
+            
+            pent = k * (3*k + 1) / 2;
+            if (pent > i) break;
+            if (sign > 0) {
+                apf_add(&sum, &sum, &p[i - pent]);
+            } else {
+                apf_sub(&sum, &sum, &p[i - pent]);
+            }
+        }
+        p[i] = sum;
+    }
+    *r = p[n];
+}
+
 #endif /* HAVE_GCD */
 
 /* ========== Bitwise Operations ========== */

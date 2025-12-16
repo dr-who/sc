@@ -182,7 +182,7 @@
   #define HAVE_GAMMA 1       /* gamma, lgamma, factorial extension */
   #define HAVE_ERF 1         /* erf, erfc */
   #define HAVE_DISTRIBUTIONS 1  /* normal, t, chi2, F, binomial, poisson */
-  /* #define HAVE_BESSEL 1 - not implemented */
+  #define HAVE_BESSEL 1      /* Bessel functions J, Y, I, K */
   /* #define HAVE_ELLIPTIC 1 - not implemented */
   #define HAVE_MATRIX 1
   #define HAVE_STATS 1

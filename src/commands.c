@@ -389,21 +389,38 @@ static int approx_equal(const char *got, const char *expected)
         }
     }
     
-    /* Generic numeric comparison - convert both to doubles and compare */
+    /* Generic numeric comparison using APF */
     {
-        double got_d = strtod(got, NULL);
-        double exp_d = strtod(expected, NULL);
-        double diff = got_d - exp_d;
-        double rel_tol, abs_tol;
-        if (diff < 0) diff = -diff;
+        apf got_apf, exp_apf, diff_apf, rel_tol_apf, abs_tol_apf;
+        apf tol_factor;
+        int cmp;
         
-        /* Relative tolerance of 0.01% and absolute tolerance of 1e-10 */
-        rel_tol = exp_d * 0.0001;
-        if (rel_tol < 0) rel_tol = -rel_tol;
-        abs_tol = 1e-10;
-        if (rel_tol < abs_tol) rel_tol = abs_tol;
+        apf_from_str(&got_apf, got);
+        apf_from_str(&exp_apf, expected);
         
-        if (diff <= rel_tol) {
+        /* diff = |got - exp| */
+        apf_sub(&diff_apf, &got_apf, &exp_apf);
+        if (diff_apf.sign) {
+            diff_apf.sign = 0;  /* abs */
+        }
+        
+        /* rel_tol = |exp| * 0.0001 (0.01% tolerance) */
+        apf_from_str(&tol_factor, "0.0001");
+        apf_copy(&rel_tol_apf, &exp_apf);
+        if (rel_tol_apf.sign) rel_tol_apf.sign = 0;
+        apf_mul(&rel_tol_apf, &rel_tol_apf, &tol_factor);
+        
+        /* abs_tol = 1e-10 */
+        apf_from_str(&abs_tol_apf, "1e-10");
+        
+        /* Use max(rel_tol, abs_tol) */
+        if (apf_cmp(&rel_tol_apf, &abs_tol_apf) < 0) {
+            apf_copy(&rel_tol_apf, &abs_tol_apf);
+        }
+        
+        /* Compare diff <= tolerance */
+        cmp = apf_cmp(&diff_apf, &rel_tol_apf);
+        if (cmp <= 0) {
             return 1;
         }
     }
@@ -845,8 +862,8 @@ void run_bench(void)
 {
     static char buf[512];
     clock_t start, end, now;
-    long elapsed_ms;
-    apf base, exp_val, r;
+    long elapsed_us;
+    apf base, exp_val, r, x, two;
     int j, actual_iters;
     /* Max 500ms per benchmark to avoid DOS hangs */
     clock_t max_ticks = (clock_t)(CLOCKS_PER_SEC / 2);
@@ -858,19 +875,19 @@ void run_bench(void)
     apf_from_int(&exp_val, 1000);
     start = clock();
     actual_iters = 0;
-    for (j = 0; j < 1000; j++) {
+    for (j = 0; j < 10000; j++) {
         apfx_pow(&r, &base, &exp_val);
         actual_iters++;
         now = clock();
         if (now - start >= max_ticks) break;
     }
     end = clock();
-    if (actual_iters > 0 && end > start) {
-        elapsed_ms = ((end - start) * 1000L) / CLOCKS_PER_SEC / actual_iters;
+    if (actual_iters > 0 && (end - start) > 0) {
+        elapsed_us = ((end - start) * 1000000L) / CLOCKS_PER_SEC / actual_iters;
     } else {
-        elapsed_ms = 0;
+        elapsed_us = 0;
     }
-    printf("  2^1000 compute:    %ld ms (%d iters)\n", elapsed_ms, actual_iters);
+    printf("  2^1000 compute:     %6ld us/op (%d iters)\n", elapsed_us, actual_iters);
     
     apf_from_int(&exp_val, 10000);
     start = clock();
@@ -882,110 +899,174 @@ void run_bench(void)
         if (now - start >= max_ticks) break;
     }
     end = clock();
-    if (actual_iters > 0 && end > start) {
-        elapsed_ms = ((end - start) * 1000L) / CLOCKS_PER_SEC / actual_iters;
+    if (actual_iters > 0 && (end - start) > 0) {
+        elapsed_us = ((end - start) * 1000000L) / CLOCKS_PER_SEC / actual_iters;
     } else {
-        elapsed_ms = 0;
+        elapsed_us = 0;
     }
-    printf("  2^10000 compute:   %ld ms (%d iters)\n", elapsed_ms, actual_iters);
+    printf("  2^10000 compute:    %6ld us/op (%d iters)\n", elapsed_us, actual_iters);
     
-    /* Large exponents - just do 1 iteration each since they can be slow */
-    apf_from_int(&exp_val, 1000000L);
+    /* Transcendental functions */
+    apf_from_str(&x, "1.5");
     start = clock();
-    apfx_pow(&r, &base, &exp_val);
+    actual_iters = 0;
+    for (j = 0; j < 10000; j++) {
+        apfx_sin(&r, &x);
+        actual_iters++;
+        now = clock();
+        if (now - start >= max_ticks) break;
+    }
     end = clock();
-    elapsed_ms = ((end - start) * 1000L) / CLOCKS_PER_SEC;
-    printf("  2^1000000 compute: %ld ms\n", elapsed_ms);
+    if (actual_iters > 0 && (end - start) > 0) {
+        elapsed_us = ((end - start) * 1000000L) / CLOCKS_PER_SEC / actual_iters;
+    } else {
+        elapsed_us = 0;
+    }
+    printf("  sin(1.5):           %6ld us/op (%d iters)\n", elapsed_us, actual_iters);
     
-    /* Skip very large exponents on slow systems - just verify they work */
-    apf_from_int(&exp_val, 10000000L);
     start = clock();
-    apfx_pow(&r, &base, &exp_val);
+    actual_iters = 0;
+    for (j = 0; j < 10000; j++) {
+        apfx_exp(&r, &x);
+        actual_iters++;
+        now = clock();
+        if (now - start >= max_ticks) break;
+    }
     end = clock();
-    elapsed_ms = ((end - start) * 1000L) / CLOCKS_PER_SEC;
-    printf("  2^10000000:        %ld ms\n", elapsed_ms);
+    if (actual_iters > 0 && (end - start) > 0) {
+        elapsed_us = ((end - start) * 1000000L) / CLOCKS_PER_SEC / actual_iters;
+    } else {
+        elapsed_us = 0;
+    }
+    printf("  exp(1.5):           %6ld us/op (%d iters)\n", elapsed_us, actual_iters);
     
-    /* Negative exponents - just 1 iteration */
-    apf_from_int(&exp_val, -1000000L);
     start = clock();
-    apfx_pow(&r, &base, &exp_val);
+    actual_iters = 0;
+    for (j = 0; j < 10000; j++) {
+        apfx_log(&r, &x);
+        actual_iters++;
+        now = clock();
+        if (now - start >= max_ticks) break;
+    }
     end = clock();
-    elapsed_ms = ((end - start) * 1000L) / CLOCKS_PER_SEC;
-    apf_to_str(buf, sizeof(buf), &r, 0);
-    printf("  2^-1000000:        %ld ms -> %s\n", elapsed_ms, buf);
+    if (actual_iters > 0 && (end - start) > 0) {
+        elapsed_us = ((end - start) * 1000000L) / CLOCKS_PER_SEC / actual_iters;
+    } else {
+        elapsed_us = 0;
+    }
+    printf("  ln(1.5):            %6ld us/op (%d iters)\n", elapsed_us, actual_iters);
     
-    /* String conversion - with timeout */
+    /* Gamma function */
+    apf_from_str(&x, "5.5");
+    start = clock();
+    actual_iters = 0;
+    for (j = 0; j < 5000; j++) {
+        apfx_tgamma(&r, &x);
+        actual_iters++;
+        now = clock();
+        if (now - start >= max_ticks) break;
+    }
+    end = clock();
+    if (actual_iters > 0 && (end - start) > 0) {
+        elapsed_us = ((end - start) * 1000000L) / CLOCKS_PER_SEC / actual_iters;
+    } else {
+        elapsed_us = 0;
+    }
+    printf("  gamma(5.5):         %6ld us/op (%d iters)\n", elapsed_us, actual_iters);
+    
+    /* Pi computation */
+    start = clock();
+    actual_iters = 0;
+    for (j = 0; j < 10000; j++) {
+        apfx_pi(&r);
+        actual_iters++;
+        now = clock();
+        if (now - start >= max_ticks) break;
+    }
+    end = clock();
+    if (actual_iters > 0 && (end - start) > 0) {
+        elapsed_us = ((end - start) * 1000000L) / CLOCKS_PER_SEC / actual_iters;
+    } else {
+        elapsed_us = 0;
+    }
+    printf("  pi compute:         %6ld us/op (%d iters)\n", elapsed_us, actual_iters);
+    
+    /* Basic arithmetic - multiplication */
+    apf_from_int(&base, 2);
+    apf_from_int(&exp_val, 500);
+    apfx_pow(&base, &base, &exp_val);
+    apf_from_int(&two, 2);
+    apf_from_int(&exp_val, 400);
+    apfx_pow(&two, &two, &exp_val);
+    start = clock();
+    actual_iters = 0;
+    for (j = 0; j < 100000; j++) {
+        apf_mul(&r, &base, &two);
+        actual_iters++;
+        now = clock();
+        if (now - start >= max_ticks) break;
+    }
+    end = clock();
+    if (actual_iters > 0 && (end - start) > 0) {
+        elapsed_us = ((end - start) * 1000000L) / CLOCKS_PER_SEC / actual_iters;
+    } else {
+        elapsed_us = 0;
+    }
+    printf("  128-bit mul:        %6ld us/op (%d iters)\n", elapsed_us, actual_iters);
+    
+    /* Division */
+    start = clock();
+    actual_iters = 0;
+    for (j = 0; j < 100000; j++) {
+        apf_div(&r, &base, &two);
+        actual_iters++;
+        now = clock();
+        if (now - start >= max_ticks) break;
+    }
+    end = clock();
+    if (actual_iters > 0 && (end - start) > 0) {
+        elapsed_us = ((end - start) * 1000000L) / CLOCKS_PER_SEC / actual_iters;
+    } else {
+        elapsed_us = 0;
+    }
+    printf("  128-bit div:        %6ld us/op (%d iters)\n", elapsed_us, actual_iters);
+    
+    /* String conversion */
+    apf_from_int(&base, 2);
     apf_from_int(&exp_val, 1000);
     apfx_pow(&r, &base, &exp_val);
     start = clock();
     actual_iters = 0;
-    for (j = 0; j < 1000; j++) {
+    for (j = 0; j < 5000; j++) {
         apf_to_str(buf, sizeof(buf), &r, 0);
         actual_iters++;
         now = clock();
         if (now - start >= max_ticks) break;
     }
     end = clock();
-    if (actual_iters > 0 && end > start) {
-        elapsed_ms = ((end - start) * 1000L) / CLOCKS_PER_SEC / actual_iters;
+    if (actual_iters > 0 && (end - start) > 0) {
+        elapsed_us = ((end - start) * 1000000L) / CLOCKS_PER_SEC / actual_iters;
     } else {
-        elapsed_ms = 0;
+        elapsed_us = 0;
     }
-    printf("  2^1000 to_str:     %ld ms (%d iters)\n", elapsed_ms, actual_iters);
+    printf("  2^1000 to_str:      %6ld us/op (%d iters)\n", elapsed_us, actual_iters);
     
-    apf_from_int(&exp_val, 10000);
-    apfx_pow(&r, &base, &exp_val);
+    /* Factorial */
     start = clock();
     actual_iters = 0;
-    for (j = 0; j < 100; j++) {  /* Fewer iters for larger number */
-        apf_to_str(buf, sizeof(buf), &r, 0);
+    for (j = 0; j < 5000; j++) {
+        apfx_fact(&r, 100);
         actual_iters++;
         now = clock();
         if (now - start >= max_ticks) break;
     }
     end = clock();
-    if (actual_iters > 0 && end > start) {
-        elapsed_ms = ((end - start) * 1000L) / CLOCKS_PER_SEC / actual_iters;
+    if (actual_iters > 0 && (end - start) > 0) {
+        elapsed_us = ((end - start) * 1000000L) / CLOCKS_PER_SEC / actual_iters;
     } else {
-        elapsed_ms = 0;
+        elapsed_us = 0;
     }
-    printf("  2^10000 to_str:    %ld ms (%d iters)\n", elapsed_ms, actual_iters);
-    
-    /* Basic operations - with timeout */
-    apf_from_int(&base, 2);
-    apf_from_int(&exp_val, 500);
-    apfx_pow(&base, &base, &exp_val);
-    start = clock();
-    actual_iters = 0;
-    for (j = 0; j < 10000; j++) {
-        apf_mul(&r, &base, &base);
-        actual_iters++;
-        now = clock();
-        if (now - start >= max_ticks) break;
-    }
-    end = clock();
-    if (actual_iters > 0 && end > start) {
-        elapsed_ms = ((end - start) * 1000L) / CLOCKS_PER_SEC / actual_iters;
-    } else {
-        elapsed_ms = 0;
-    }
-    printf("  %d-bit mul:       %ld ms (%d iters)\n", AP_BITS, elapsed_ms, actual_iters);
-    
-    start = clock();
-    actual_iters = 0;
-    for (j = 0; j < 10000; j++) {
-        apf_div(&r, &base, &base);
-        actual_iters++;
-        now = clock();
-        if (now - start >= max_ticks) break;
-    }
-    end = clock();
-    if (actual_iters > 0 && end > start) {
-        elapsed_ms = ((end - start) * 1000L) / CLOCKS_PER_SEC / actual_iters;
-    } else {
-        elapsed_ms = 0;
-    }
-    printf("  %d-bit div:       %ld ms (%d iters)\n", AP_BITS, elapsed_ms, actual_iters);
+    printf("  100!:               %6ld us/op (%d iters)\n", elapsed_us, actual_iters);
     
     printf("\n");
 }

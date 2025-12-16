@@ -1530,6 +1530,43 @@ void apf_from_str(apf *x, const char *s)
         }
     }
     
+    /* Handle exponent (e.g., 1e-10, 2.5E+20) */
+    if (*s == 'e' || *s == 'E') {
+        int exp_neg = 0;
+        long exp_val = 0;
+        apf multiplier, temp;
+        
+        s++;
+        if (*s == '-') {
+            exp_neg = 1;
+            s++;
+        } else if (*s == '+') {
+            s++;
+        }
+        
+        while (*s >= '0' && *s <= '9') {
+            exp_val = exp_val * 10 + (*s - '0');
+            if (exp_val > 1000) exp_val = 1000;  /* Cap exponent */
+            s++;
+        }
+        
+        /* Apply 10^exp_val */
+        apf_from_int(&multiplier, 10);
+        if (exp_neg) {
+            while (exp_val > 0) {
+                apf_div(&temp, x, &multiplier);
+                apf_copy(x, &temp);
+                exp_val--;
+            }
+        } else {
+            while (exp_val > 0) {
+                apf_mul(&temp, x, &multiplier);
+                apf_copy(x, &temp);
+                exp_val--;
+            }
+        }
+    }
+    
     /* Apply sign */
     if (neg && x->cls == APF_CLASS_NORMAL) {
         x->sign = 1;

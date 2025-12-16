@@ -40,6 +40,85 @@ int is_prime_long(long n);
 /* Prime factorization (stores factors in array, returns count) */
 int prime_factors(long n, long *factors, int max_factors);
 
+/* nth prime number (nthprime(1)=2, nthprime(2)=3, ...) */
+long nthprime_long(long n);
+
+/* Next prime >= n */
+long nextprime_long(long n);
+
+/* Previous prime <= n */
+long prevprime_long(long n);
+
+/* Count of primes <= n (prime counting function) */
+long primepi_long(long n);
+
+/* Product of distinct prime factors */
+long radical_long(long n);
+
+/* Count of distinct prime factors (omega) */
+long omega_long(long n);
+
+/* Count of prime factors with multiplicity (bigomega/Omega) */
+long bigomega_long(long n);
+
+/* Is squarefree? */
+int issquarefree_long(long n);
+
+/* Möbius function */
+int moebius_long(long n);
+
+/* Euler's totient */
+long totient_long(long n);
+
+/* Sum of divisors to power k (sigma_k) */
+long sigma_long(long n, int k);
+
+/* Number of divisors */
+long numdivisors_long(long n);
+
+/* Sum of digits */
+long digsum_long(long n);
+
+/* Number of digits */
+long numdigits_long(long n);
+
+/* Digital root */
+long digitalroot_long(long n);
+
+/* Reverse digits */
+long reverse_long(long n);
+
+/* Is palindrome? */
+int ispalindrome_long(long n);
+
+/* Perfect, abundant, deficient tests */
+int isperfect_long(long n);
+int isabundant_long(long n);
+int isdeficient_long(long n);
+
+/* Figurate numbers */
+long triangular_long(long n);
+int istriangular_long(long n);
+long square_long(long n);
+int issquare_long(long n);
+long pentagonal_long(long n);
+long hexagonal_long(long n);
+
+/* Is perfect power? */
+int ispower_long(long n);
+
+/* Subfactorial / derangements */
+void apf_subfactorial(apf *r, long n);
+
+/* Bell numbers */
+void apf_bell(apf *r, long n);
+
+/* Stirling numbers of second kind */
+void apf_stirling2(apf *r, long n, long k);
+
+/* Partition function */
+void apf_partition(apf *r, long n);
+
 #endif /* HAVE_GCD */
 
 /* ========== Bitwise Operations ========== */

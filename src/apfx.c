@@ -1705,6 +1705,100 @@ void apfx_j1(apf *r, const apf *x)
         if (neg) apf_neg(r, r);
     }
 }
+
+/* Bessel function J_n(x) for integer order n using recurrence */
+void apfx_besselj(apf *r, int n, const apf *x)
+{
+    apf jn, jn1, jn2, coef;
+    int k, neg;
+    
+    if (x->cls == APF_CLASS_NAN) { apf_set_nan(r); return; }
+    
+    neg = 0;
+    if (n < 0) {
+        n = -n;
+        neg = (n % 2);  /* J_{-n}(x) = (-1)^n * J_n(x) */
+    }
+    
+    if (n == 0) {
+        apfx_j0(r, x);
+        if (neg) apf_neg(r, r);
+        return;
+    }
+    if (n == 1) {
+        apfx_j1(r, x);
+        if (neg) apf_neg(r, r);
+        return;
+    }
+    
+    /* Use upward recurrence: J_{n+1} = (2n/x)*J_n - J_{n-1} */
+    apfx_j0(&jn2, x);
+    apfx_j1(&jn1, x);
+    
+    for (k = 1; k < n; k++) {
+        /* jn = (2*k/x) * jn1 - jn2 */
+        apf_from_int(&coef, 2 * k);
+        apf_div(&coef, &coef, x);
+        apf_mul(&jn, &coef, &jn1);
+        apf_sub(&jn, &jn, &jn2);
+        
+        apf_copy(&jn2, &jn1);
+        apf_copy(&jn1, &jn);
+    }
+    
+    apf_copy(r, &jn1);
+    if (neg) apf_neg(r, r);
+}
+
+/* Bessel function Y_n(x) for integer order n using recurrence */
+void apfx_bessely(apf *r, int n, const apf *x)
+{
+    apf yn, yn1, yn2, coef;
+    int k, neg;
+    
+    if (x->cls == APF_CLASS_NAN) { apf_set_nan(r); return; }
+    
+    /* Y_n is only defined for x > 0 */
+    if (x->cls == APF_CLASS_ZERO || x->sign < 0) {
+        apf_set_nan(r);
+        return;
+    }
+    
+    neg = 0;
+    if (n < 0) {
+        n = -n;
+        neg = (n % 2);  /* Y_{-n}(x) = (-1)^n * Y_n(x) */
+    }
+    
+    if (n == 0) {
+        apfx_y0(r, x);
+        if (neg) apf_neg(r, r);
+        return;
+    }
+    if (n == 1) {
+        apfx_y1(r, x);
+        if (neg) apf_neg(r, r);
+        return;
+    }
+    
+    /* Use upward recurrence: Y_{n+1} = (2n/x)*Y_n - Y_{n-1} */
+    apfx_y0(&yn2, x);
+    apfx_y1(&yn1, x);
+    
+    for (k = 1; k < n; k++) {
+        /* yn = (2*k/x) * yn1 - yn2 */
+        apf_from_int(&coef, 2 * k);
+        apf_div(&coef, &coef, x);
+        apf_mul(&yn, &coef, &yn1);
+        apf_sub(&yn, &yn, &yn2);
+        
+        apf_copy(&yn2, &yn1);
+        apf_copy(&yn1, &yn);
+    }
+    
+    apf_copy(r, &yn1);
+    if (neg) apf_neg(r, r);
+}
 #endif /* HAVE_BESSEL */
 
 #ifdef HAVE_ELLIPTIC
@@ -2845,4 +2939,236 @@ void apfx_k1(apf *r, const apf *x)
     apf_add(r, &term, &inv_x);
 }
 #endif /* HAVE_BESSEL */
+
+/* ========== Additional Special Functions ========== */
+
+/* Digamma function psi(x) = d/dx ln(Gamma(x)) = Gamma'(x)/Gamma(x)
+ * Uses asymptotic expansion for large x, reflection for negative x
+ */
+void apfx_digamma(apf *r, const apf *x)
+{
+    apf sum, term, x_work, one, eight, inv_x, inv_x2, x2;
+    
+    if (x->cls == APF_CLASS_NAN) { apf_set_nan(r); return; }
+    if (x->cls == APF_CLASS_INF) { 
+        if (x->sign) apf_set_nan(r);
+        else apf_set_inf(r, 0);
+        return;
+    }
+    
+    apf_from_int(&one, 1);
+    
+    /* For negative x, use reflection: psi(1-x) - psi(x) = pi*cot(pi*x) */
+    if (x->sign) {
+        apf one_minus_x, psi_pos, pi_x, cot_val, pi;
+        apf_sub(&one_minus_x, &one, x);
+        apfx_digamma(&psi_pos, &one_minus_x);
+        apfx_pi(&pi);
+        apf_mul(&pi_x, &pi, x);
+        apfx_cos(&term, &pi_x);
+        apfx_sin(&cot_val, &pi_x);
+        apf_div(&cot_val, &term, &cot_val);
+        apf_mul(&cot_val, &cot_val, &pi);
+        apf_sub(r, &psi_pos, &cot_val);
+        return;
+    }
+    
+    /* Use recurrence to shift x to large value */
+    apf_copy(&x_work, x);
+    apf_zero(&sum);
+    apf_from_int(&eight, 8);
+    while (apf_cmp(&x_work, &eight) < 0) {
+        apf_from_int(&one, 1);
+        apf_div(&term, &one, &x_work);
+        apf_sub(&sum, &sum, &term);
+        apf_add(&x_work, &x_work, &one);
+    }
+    
+    /* Asymptotic expansion: psi(x) ~ ln(x) - 1/(2x) - sum B_{2k}/(2k*x^{2k}) */
+    apfx_log(&term, &x_work);
+    apf_add(&sum, &sum, &term);
+    
+    apf_from_int(&one, 1);
+    apf_div(&inv_x, &one, &x_work);
+    apf_mul(&inv_x2, &inv_x, &inv_x);
+    
+    /* -1/(2x) */
+    {
+        apf two;
+        apf_from_int(&two, 2);
+        apf_mul(&term, &two, &x_work);
+        apf_from_int(&one, 1);
+        apf_div(&term, &one, &term);
+        apf_sub(&sum, &sum, &term);
+    }
+    
+    /* Bernoulli number terms: B_2/2 = 1/12, B_4/4 = -1/120, B_6/6 = 1/252, ... */
+    apf_copy(&x2, &inv_x2);
+    
+    /* 1/12 / x^2 */
+    {
+        apf b2;
+        apf_from_str(&b2, "0.0833333333333333333333333333333333333");
+        apf_mul(&term, &b2, &x2);
+        apf_sub(&sum, &sum, &term);
+    }
+    apf_mul(&x2, &x2, &inv_x2);
+    
+    /* 1/120 / x^4 */
+    {
+        apf b4;
+        apf_from_str(&b4, "0.0083333333333333333333333333333333333");
+        apf_mul(&term, &b4, &x2);
+        apf_add(&sum, &sum, &term);
+    }
+    apf_mul(&x2, &x2, &inv_x2);
+    
+    /* 1/252 / x^6 */
+    {
+        apf b6;
+        apf_from_str(&b6, "0.0039682539682539682539682539682539683");
+        apf_mul(&term, &b6, &x2);
+        apf_sub(&sum, &sum, &term);
+    }
+    
+    apf_copy(r, &sum);
+}
+
+/* Riemann zeta function for s > 1
+ * Uses direct summation with acceleration for small s
+ */
+void apfx_zeta(apf *r, const apf *s)
+{
+    apf sum, term, one, n_apf, prev_sum;
+    long n;
+    int max_iter = 1000;
+    
+    if (s->cls == APF_CLASS_NAN) { apf_set_nan(r); return; }
+    if (s->cls == APF_CLASS_INF) {
+        apf_from_int(r, s->sign ? 0 : 1);
+        return;
+    }
+    
+    apf_from_int(&one, 1);
+    
+    /* Check s > 1 */
+    if (apf_cmp(s, &one) <= 0) {
+        /* For s = 1, pole (return inf) */
+        if (apf_cmp(s, &one) == 0) {
+            apf_set_inf(r, 0);
+        } else {
+            /* For s <= 0, would need analytic continuation - not implemented */
+            apf_set_nan(r);
+        }
+        return;
+    }
+    
+    /* Direct sum: zeta(s) = sum_{n=1}^inf 1/n^s */
+    apf_zero(&sum);
+    for (n = 1; n <= max_iter; n++) {
+        apf_copy(&prev_sum, &sum);
+        apf_from_int(&n_apf, n);
+        apfx_pow(&term, &n_apf, s);
+        apf_from_int(&one, 1);
+        apf_div(&term, &one, &term);
+        apf_add(&sum, &sum, &term);
+        
+        /* Convergence check */
+        if (n > 10) {
+            apf diff;
+            apf_sub(&diff, &sum, &prev_sum);
+            if (diff.exp < sum.exp - AP_BITS + 10) break;
+        }
+    }
+    
+    apf_copy(r, &sum);
+}
+
+/* Harmonic number H_n = 1 + 1/2 + 1/3 + ... + 1/n */
+void apfx_harmonic(apf *r, long n)
+{
+    apf sum, term, one;
+    long k;
+    
+    if (n <= 0) { apf_zero(r); return; }
+    
+    apf_zero(&sum);
+    apf_from_int(&one, 1);
+    
+    for (k = 1; k <= n; k++) {
+        apf k_apf;
+        apf_from_int(&k_apf, k);
+        apf_div(&term, &one, &k_apf);
+        apf_add(&sum, &sum, &term);
+    }
+    
+    apf_copy(r, &sum);
+}
+
+/* Generalized harmonic number H_{n,m} = sum_{k=1}^n 1/k^m */
+void apfx_harmonic_gen(apf *r, long n, long m)
+{
+    apf sum, term, one;
+    long k;
+    
+    if (n <= 0) { apf_zero(r); return; }
+    if (m == 0) { apf_from_int(r, n); return; }
+    
+    apf_zero(&sum);
+    apf_from_int(&one, 1);
+    
+    for (k = 1; k <= n; k++) {
+        apf k_apf, k_pow, m_apf;
+        apf_from_int(&k_apf, k);
+        apf_from_int(&m_apf, m);
+        apfx_pow(&k_pow, &k_apf, &m_apf);
+        apf_div(&term, &one, &k_pow);
+        apf_add(&sum, &sum, &term);
+    }
+    
+    apf_copy(r, &sum);
+}
+
+/* Pochhammer symbol (rising factorial) (x)_n = x(x+1)(x+2)...(x+n-1) */
+void apfx_pochhammer(apf *r, const apf *x, long n)
+{
+    apf prod, term, one;
+    long k;
+    
+    if (n <= 0) { apf_from_int(r, 1); return; }
+    
+    apf_copy(&prod, x);
+    apf_from_int(&one, 1);
+    
+    for (k = 1; k < n; k++) {
+        apf x_plus_k;
+        apf_from_int(&term, k);
+        apf_add(&x_plus_k, x, &term);
+        apf_mul(&prod, &prod, &x_plus_k);
+    }
+    
+    apf_copy(r, &prod);
+}
+
+/* Falling factorial x^(n) = x(x-1)(x-2)...(x-n+1) */
+void apfx_falling(apf *r, const apf *x, long n)
+{
+    apf prod, term, one;
+    long k;
+    
+    if (n <= 0) { apf_from_int(r, 1); return; }
+    
+    apf_copy(&prod, x);
+    apf_from_int(&one, 1);
+    
+    for (k = 1; k < n; k++) {
+        apf x_minus_k;
+        apf_from_int(&term, k);
+        apf_sub(&x_minus_k, x, &term);
+        apf_mul(&prod, &prod, &x_minus_k);
+    }
+    
+    apf_copy(r, &prod);
+}
+
 

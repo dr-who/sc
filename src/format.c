@@ -261,6 +261,7 @@ void apf_to_hex_str(const apf *val)
     static char hbuf[256];
     char *p;
     long lval;
+    long val_exp;  /* Position of MSB in actual value */
     
     if (val->cls == APF_CLASS_ZERO) {
         printf("0x0\n");
@@ -275,32 +276,91 @@ void apf_to_hex_str(const apf *val)
         return;
     }
     
-    /* For numbers that fit in long, use simple conversion */
-    lval = apf_to_long(val);
+    /* Position of MSB in actual value */
+    val_exp = (AP_BITS - 1) + val->exp;
     
-    /* Check if number is too large for exact representation */
-    if (val->exp > 30) {
-        printf("~2^%ld (too large for exact hex)\n", val->exp);
+    /* Check if number has fractional part */
+    if (val_exp < 0) {
+        printf("~0x0.xxx (fractional)\n");
         return;
     }
     
-    p = hbuf;
-    if (lval < 0) {
-        *p++ = '-';
-        lval = -lval;
+    /* For numbers that fit in 63 bits, use simple conversion */
+    if (val_exp <= 62) {
+        lval = apf_to_long(val);
+        p = hbuf;
+        if (lval < 0) {
+            *p++ = '-';
+            lval = -lval;
+        }
+        sprintf(p, "0x%lX", lval);
+        printf("%s\n", hbuf);
+        return;
     }
-    sprintf(p, "0x%lX", lval);
-    printf("%s\n", hbuf);
+    
+    /* For larger numbers, extract from limbs */
+    if (val_exp > 500) {
+        printf("~2^%ld (too large)\n", val_exp);
+        return;
+    }
+    
+    {
+        /* Extract hex digits from limbs */
+        int total_nybbles = ((int)val_exp + 4) / 4;  /* Round up */
+        int nybble_pos;
+        int started = 0;
+        
+        p = hbuf;
+        if (val->sign) *p++ = '-';
+        *p++ = '0';
+        *p++ = 'x';
+        
+        for (nybble_pos = total_nybbles - 1; nybble_pos >= 0; nybble_pos--) {
+            int bit_pos = nybble_pos * 4;  /* Lowest bit of this nybble in value */
+            int mant_bit = (AP_BITS - 1) - ((int)val_exp - bit_pos - 3);  /* Map to mantissa */
+            int nybble = 0;
+            int b;
+            
+            for (b = 0; b < 4; b++) {
+                int mb = mant_bit - (3 - b);  /* Bit position in mantissa */
+                int bit;
+                
+                if (mb < 0 || mb >= AP_BITS) {
+                    bit = 0;
+                } else {
+                    int limb_idx = mb / 16;
+                    int bit_in_limb = mb % 16;
+                    if (limb_idx >= 0 && limb_idx < AP_LIMBS) {
+                        bit = (val->mant[limb_idx] >> bit_in_limb) & 1;
+                    } else {
+                        bit = 0;
+                    }
+                }
+                nybble = (nybble << 1) | bit;
+            }
+            
+            if (nybble != 0 || started || nybble_pos == 0) {
+                *p++ = "0123456789ABCDEF"[nybble];
+                started = 1;
+            }
+        }
+        
+        *p = '\0';
+        printf("%s\n", hbuf);
+    }
 }
 
 /* ========== Binary Output ========== */
 
 void apf_to_bin_str(const apf *val)
 {
-    static char bbuf[256];
+    static char bbuf[512];  /* Enough for 256+ bits */
     char *p;
     long lval;
-    int i, started = 0;
+    int i;
+    unsigned long uval;
+    int nbits;
+    long val_exp;  /* Position of MSB in actual value */
     
     if (val->cls == APF_CLASS_ZERO) {
         printf("0b0\n");
@@ -315,36 +375,120 @@ void apf_to_bin_str(const apf *val)
         return;
     }
     
-    /* For numbers that fit in long, use simple conversion */
-    lval = apf_to_long(val);
+    /* After normalization, MSB is at AP_BITS-1.
+     * Value = mant * 2^exp
+     * Position of MSB in actual value = (AP_BITS-1) + exp
+     */
+    val_exp = (AP_BITS - 1) + val->exp;  /* Position of MSB in actual integer */
     
-    /* Check if number is too large for exact representation */
-    if (val->exp > 30) {
-        printf("~2^%ld (too large for exact binary)\n", val->exp);
+    /* Check if it's an integer (MSB position >= 0 and no fractional bits) */
+    if (val_exp < 0) {
+        /* Value < 1, has fractional part only */
+        printf("~0b0.xxx (fractional)\n");
         return;
     }
     
-    p = bbuf;
-    if (lval < 0) {
-        *p++ = '-';
-        lval = -lval;
-    }
-    *p++ = '0';
-    *p++ = 'b';
-    
-    /* Print bits from MSB to LSB */
-    for (i = 30; i >= 0; i--) {
-        int bit = (lval >> i) & 1;
-        if (bit || started) {
-            *p++ = '0' + bit;
-            started = 1;
+    /* For small integers that fit in long, use simple conversion */
+    if (val_exp <= 62) {
+        lval = apf_to_long(val);
+        
+        p = bbuf;
+        if (lval < 0) {
+            *p++ = '-';
+            uval = (unsigned long)(-lval);
+        } else {
+            uval = (unsigned long)lval;
         }
-    }
-    if (!started) {
         *p++ = '0';
+        *p++ = 'b';
+        
+        /* Find highest bit */
+        if (uval == 0) {
+            *p++ = '0';
+        } else {
+            nbits = 0;
+            for (i = 63; i >= 0; i--) {
+                if (uval & (1UL << i)) {
+                    nbits = i + 1;
+                    break;
+                }
+            }
+            
+            /* Output bits with grouping for large numbers */
+            for (i = nbits - 1; i >= 0; i--) {
+                *p++ = ((uval >> i) & 1) ? '1' : '0';
+                /* Add space every 8 bits for readability */
+                if (nbits > 16 && i > 0 && i % 8 == 0) {
+                    *p++ = ' ';
+                }
+            }
+        }
+        *p = '\0';
+        printf("%s\n", bbuf);
+        return;
     }
-    *p = '\0';
-    printf("%s\n", bbuf);
+    
+    /* For larger numbers, extract bits from limbs */
+    if (val_exp > 500) {
+        printf("~2^%ld (too large)\n", val_exp);
+        return;
+    }
+    
+    {
+        /* Large integer: extract bits from limbs */
+        int total_bits = (int)val_exp + 1;
+        int bit_pos;
+        int output_pos;
+        
+        p = bbuf;
+        if (val->sign) *p++ = '-';
+        *p++ = '0';
+        *p++ = 'b';
+        
+        /* Extract bits from mantissa */
+        /* The MSB is at position AP_BITS-1 in the mantissa */
+        /* We need to output bits from position val_exp down to 0 */
+        for (bit_pos = total_bits - 1; bit_pos >= 0; bit_pos--) {
+            int mant_bit;  /* Position in mantissa */
+            int limb_idx, bit_in_limb;
+            int bit;
+            
+            /* Map value bit position to mantissa bit position */
+            /* Bit at position val_exp maps to AP_BITS-1 */
+            /* Bit at position val_exp-1 maps to AP_BITS-2, etc. */
+            mant_bit = (AP_BITS - 1) - (total_bits - 1 - bit_pos);
+            
+            if (mant_bit < 0) {
+                bit = 0;  /* Beyond mantissa precision */
+            } else {
+                /* Which limb and bit within limb? */
+                /* mant[AP_LIMBS-1] has bits [AP_BITS-1 .. AP_BITS-16] = [127..112] for 128-bit */
+                /* mant[AP_LIMBS-2] has bits [AP_BITS-17 .. AP_BITS-32] = [111..96] */
+                /* mant[0] has bits [15..0] */
+                /* So for mant_bit in [127..112], limb_idx = AP_LIMBS-1 */
+                /* For mant_bit in [111..96], limb_idx = AP_LIMBS-2 */
+                limb_idx = mant_bit / 16;  /* Low bits in low limbs */
+                bit_in_limb = mant_bit % 16;
+                
+                if (limb_idx >= 0 && limb_idx < AP_LIMBS) {
+                    bit = (val->mant[limb_idx] >> bit_in_limb) & 1;
+                } else {
+                    bit = 0;
+                }
+            }
+            
+            *p++ = '0' + bit;
+            
+            /* Add space every 8 bits for readability */
+            output_pos = bit_pos;
+            if (total_bits > 16 && output_pos > 0 && output_pos % 8 == 0) {
+                *p++ = ' ';
+            }
+        }
+        
+        *p = '\0';
+        printf("%s\n", bbuf);
+    }
 }
 
 /* ========== IEEE Educational Display ========== */

@@ -1499,6 +1499,107 @@ static int parse_factor(apfc *result)
             apf_zero(&result->im);
             return 1;
         }
+        /* beta(a, b) - Beta function: gamma(a)*gamma(b)/gamma(a+b) */
+        if (str_eq(name, "beta")) {
+            apfc arg2;
+            apf ga, gb, gab, ab, num;
+            if (current_token.type != TOK_COMMA) {
+                printf("Error: beta requires two arguments: beta(a, b)\n");
+                return 0;
+            }
+            next_token();
+            if (!parse_expr(&arg2)) return 0;
+            if (current_token.type != TOK_RPAREN) {
+                printf("Error: expected ')'\n");
+                return 0;
+            }
+            next_token();
+            /* B(a,b) = gamma(a)*gamma(b)/gamma(a+b) */
+            apfx_tgamma(&ga, &arg.re);
+            apfx_tgamma(&gb, &arg2.re);
+            apf_add(&ab, &arg.re, &arg2.re);
+            apfx_tgamma(&gab, &ab);
+            apf_mul(&num, &ga, &gb);
+            apf_div(&result->re, &num, &gab);
+            apf_zero(&result->im);
+            return 1;
+        }
+        /* besselj(n, x) - Bessel function of first kind */
+        if (str_eq(name, "besselj") || str_eq(name, "besselJ")) {
+            apfc arg2;
+            int n;
+            if (current_token.type != TOK_COMMA) {
+                printf("Error: besselj requires two arguments: besselj(n, x)\n");
+                return 0;
+            }
+            next_token();
+            if (!parse_expr(&arg2)) return 0;
+            if (current_token.type != TOK_RPAREN) {
+                printf("Error: expected ')'\n");
+                return 0;
+            }
+            next_token();
+            n = (int)apf_to_long(&arg.re);
+            apfx_besselj(&result->re, n, &arg2.re);
+            apf_zero(&result->im);
+            return 1;
+        }
+        /* bessely(n, x) - Bessel function of second kind */
+        if (str_eq(name, "bessely") || str_eq(name, "besselY")) {
+            apfc arg2;
+            int n;
+            if (current_token.type != TOK_COMMA) {
+                printf("Error: bessely requires two arguments: bessely(n, x)\n");
+                return 0;
+            }
+            next_token();
+            if (!parse_expr(&arg2)) return 0;
+            if (current_token.type != TOK_RPAREN) {
+                printf("Error: expected ')'\n");
+                return 0;
+            }
+            next_token();
+            n = (int)apf_to_long(&arg.re);
+            apfx_bessely(&result->re, n, &arg2.re);
+            apf_zero(&result->im);
+            return 1;
+        }
+        /* tcdf(t, df) - Student's t CDF */
+        if (str_eq(name, "tcdf") || str_eq(name, "student_cdf")) {
+            apfc arg2;
+            if (current_token.type != TOK_COMMA) {
+                printf("Error: tcdf requires two arguments: tcdf(t, df)\n");
+                return 0;
+            }
+            next_token();
+            if (!parse_expr(&arg2)) return 0;
+            if (current_token.type != TOK_RPAREN) {
+                printf("Error: expected ')'\n");
+                return 0;
+            }
+            next_token();
+            apfx_tcdf(&result->re, &arg.re, apf_to_long(&arg2.re));
+            apf_zero(&result->im);
+            return 1;
+        }
+        /* chi2cdf(x, df) - Chi-squared CDF */
+        if (str_eq(name, "chi2cdf") || str_eq(name, "chicdf")) {
+            apfc arg2;
+            if (current_token.type != TOK_COMMA) {
+                printf("Error: chi2cdf requires two arguments: chi2cdf(x, df)\n");
+                return 0;
+            }
+            next_token();
+            if (!parse_expr(&arg2)) return 0;
+            if (current_token.type != TOK_RPAREN) {
+                printf("Error: expected ')'\n");
+                return 0;
+            }
+            next_token();
+            apfx_chi2cdf(&result->re, &arg.re, apf_to_long(&arg2.re));
+            apf_zero(&result->im);
+            return 1;
+        }
         /* nthroot(x, n) - real nth root preserving sign */
         if (str_eq(name, "nthroot")) {
             apfc arg2;
@@ -1700,6 +1801,143 @@ static int parse_factor(apfc *result)
             return 1;
         }
 #endif
+        /* Beta function B(a,b) = Gamma(a)*Gamma(b)/Gamma(a+b) */
+        if (str_eq(name, "beta")) {
+            apfc arg2;
+            if (current_token.type != TOK_COMMA) {
+                printf("Error: beta requires two arguments: beta(a, b)\n");
+                return 0;
+            }
+            next_token();
+            if (!parse_expr(&arg2)) return 0;
+            if (current_token.type != TOK_RPAREN) {
+                printf("Error: expected ')'\n");
+                return 0;
+            }
+            next_token();
+            apfx_beta(&result->re, &arg.re, &arg2.re);
+            apf_zero(&result->im);
+            return 1;
+        }
+        /* Stirling numbers of the second kind S(n,k) */
+        if (str_eq(name, "stirling2") || str_eq(name, "stirling")) {
+            apfc arg2;
+            long n, k;
+            if (current_token.type != TOK_COMMA) {
+                printf("Error: stirling2 requires two arguments: stirling2(n, k)\n");
+                return 0;
+            }
+            next_token();
+            if (!parse_expr(&arg2)) return 0;
+            if (current_token.type != TOK_RPAREN) {
+                printf("Error: expected ')'\n");
+                return 0;
+            }
+            next_token();
+            n = apf_to_long(&arg.re);
+            k = apf_to_long(&arg2.re);
+            if (n < 0 || k < 0 || n > 100 || k > n) {
+                printf("Error: stirling2 arguments out of range\n");
+                return 0;
+            }
+            apf_stirling2(&result->re, n, k);
+            apf_zero(&result->im);
+            return 1;
+        }
+        /* Pochhammer symbol (rising factorial) (x)_n */
+        if (str_eq(name, "pochhammer") || str_eq(name, "rising")) {
+            apfc arg2;
+            long n;
+            if (current_token.type != TOK_COMMA) {
+                printf("Error: pochhammer requires two arguments: pochhammer(x, n)\n");
+                return 0;
+            }
+            next_token();
+            if (!parse_expr(&arg2)) return 0;
+            if (current_token.type != TOK_RPAREN) {
+                printf("Error: expected ')'\n");
+                return 0;
+            }
+            next_token();
+            n = apf_to_long(&arg2.re);
+            if (n < 0 || n > 100) {
+                printf("Error: pochhammer n out of range (0-100)\n");
+                return 0;
+            }
+            apfx_pochhammer(&result->re, &arg.re, n);
+            apf_zero(&result->im);
+            return 1;
+        }
+        /* Falling factorial x^(n) */
+        if (str_eq(name, "falling") || str_eq(name, "ffactorial")) {
+            apfc arg2;
+            long n;
+            if (current_token.type != TOK_COMMA) {
+                printf("Error: falling requires two arguments: falling(x, n)\n");
+                return 0;
+            }
+            next_token();
+            if (!parse_expr(&arg2)) return 0;
+            if (current_token.type != TOK_RPAREN) {
+                printf("Error: expected ')'\n");
+                return 0;
+            }
+            next_token();
+            n = apf_to_long(&arg2.re);
+            if (n < 0 || n > 100) {
+                printf("Error: falling n out of range (0-100)\n");
+                return 0;
+            }
+            apfx_falling(&result->re, &arg.re, n);
+            apf_zero(&result->im);
+            return 1;
+        }
+        /* Generalized harmonic number H_{n,m} */
+        if (str_eq(name, "harmonic2") || str_eq(name, "genharmonic")) {
+            apfc arg2;
+            long n, m;
+            if (current_token.type != TOK_COMMA) {
+                printf("Error: harmonic2 requires two arguments: harmonic2(n, m)\n");
+                return 0;
+            }
+            next_token();
+            if (!parse_expr(&arg2)) return 0;
+            if (current_token.type != TOK_RPAREN) {
+                printf("Error: expected ')'\n");
+                return 0;
+            }
+            next_token();
+            n = apf_to_long(&arg.re);
+            m = apf_to_long(&arg2.re);
+            if (n < 0 || n > 10000) {
+                printf("Error: harmonic2 n out of range\n");
+                return 0;
+            }
+            apfx_harmonic_gen(&result->re, n, m);
+            apf_zero(&result->im);
+            return 1;
+        }
+        /* Sigma function with power parameter */
+        if (str_eq(name, "sigmak") || str_eq(name, "divisorsum_k")) {
+            apfc arg2;
+            long n, k;
+            if (current_token.type != TOK_COMMA) {
+                printf("Error: sigmak requires two arguments: sigmak(n, k)\n");
+                return 0;
+            }
+            next_token();
+            if (!parse_expr(&arg2)) return 0;
+            if (current_token.type != TOK_RPAREN) {
+                printf("Error: expected ')'\n");
+                return 0;
+            }
+            next_token();
+            n = apf_to_long(&arg.re);
+            k = (int)apf_to_long(&arg2.re);
+            apf_from_int(&result->re, sigma_long(n, k));
+            apf_zero(&result->im);
+            return 1;
+        }
 
         /* Single-argument functions - require ')' */
         if (current_token.type != TOK_RPAREN) {
@@ -2451,6 +2689,31 @@ static int parse_factor(apfc *result)
             }
             apfx_erfc(&result->re, &arg.re);
             apf_zero(&result->im);
+        } else if (str_eq(name, "digamma") || str_eq(name, "psi")) {
+            /* digamma function: psi(x) = d/dx ln(Gamma(x)) */
+            if (!apfc_is_real(&arg)) {
+                printf("Error: digamma requires real argument\n");
+                return 0;
+            }
+            apfx_digamma(&result->re, &arg.re);
+            apf_zero(&result->im);
+        } else if (str_eq(name, "zeta") || str_eq(name, "riemann_zeta")) {
+            /* Riemann zeta function */
+            if (!apfc_is_real(&arg)) {
+                printf("Error: zeta requires real argument\n");
+                return 0;
+            }
+            apfx_zeta(&result->re, &arg.re);
+            apf_zero(&result->im);
+        } else if (str_eq(name, "harmonic")) {
+            /* Harmonic number H_n */
+            long n = apf_to_long(&arg.re);
+            if (n < 0 || n > 10000) {
+                printf("Error: harmonic argument out of range\n");
+                return 0;
+            }
+            apfx_harmonic(&result->re, n);
+            apf_zero(&result->im);
         } else if (str_eq(name, "sinc")) {
             /* sinc(x) = sin(pi*x)/(pi*x), with sinc(0) = 1 */
             if (apf_is_zero(&arg.re)) {
@@ -2736,11 +2999,147 @@ static int parse_factor(apfc *result)
             apfc_ieee_display(&arg);
             *result = arg;
 #ifdef HAVE_GCD
-        } else if (str_eq(name, "isprime") || str_eq(name, "prime")) {
+        } else if (str_eq(name, "isprime")) {
             long n = apf_to_long(&arg.re);
             apf_from_int(&result->re, is_prime_long(n));
             apf_zero(&result->im);
             result_is_boolean = 1;
+        } else if (str_eq(name, "nthprime")) {
+            long n = apf_to_long(&arg.re);
+            if (n < 1 || n > 100000) {
+                printf("Error: nthprime argument out of range (1-100000)\n");
+                return 0;
+            }
+            apf_from_int(&result->re, nthprime_long(n));
+            apf_zero(&result->im);
+        } else if (str_eq(name, "nextprime")) {
+            long n = apf_to_long(&arg.re);
+            apf_from_int(&result->re, nextprime_long(n));
+            apf_zero(&result->im);
+        } else if (str_eq(name, "prevprime")) {
+            long n = apf_to_long(&arg.re);
+            apf_from_int(&result->re, prevprime_long(n));
+            apf_zero(&result->im);
+        } else if (str_eq(name, "primepi")) {
+            long n = apf_to_long(&arg.re);
+            apf_from_int(&result->re, primepi_long(n));
+            apf_zero(&result->im);
+        } else if (str_eq(name, "radical")) {
+            long n = apf_to_long(&arg.re);
+            apf_from_int(&result->re, radical_long(n));
+            apf_zero(&result->im);
+        } else if (str_eq(name, "omega")) {
+            long n = apf_to_long(&arg.re);
+            apf_from_int(&result->re, omega_long(n));
+            apf_zero(&result->im);
+        } else if (str_eq(name, "bigomega") || str_eq(name, "Omega")) {
+            long n = apf_to_long(&arg.re);
+            apf_from_int(&result->re, bigomega_long(n));
+            apf_zero(&result->im);
+        } else if (str_eq(name, "issquarefree")) {
+            long n = apf_to_long(&arg.re);
+            apf_from_int(&result->re, issquarefree_long(n));
+            apf_zero(&result->im);
+            result_is_boolean = 1;
+        } else if (str_eq(name, "moebius") || str_eq(name, "mobius") || str_eq(name, "mu")) {
+            long n = apf_to_long(&arg.re);
+            apf_from_int(&result->re, moebius_long(n));
+            apf_zero(&result->im);
+        } else if (str_eq(name, "sigma") || str_eq(name, "divisorsum")) {
+            long n = apf_to_long(&arg.re);
+            apf_from_int(&result->re, sigma_long(n, 1));
+            apf_zero(&result->im);
+        } else if (str_eq(name, "sigma0") || str_eq(name, "numdivisors") || str_eq(name, "tau")) {
+            long n = apf_to_long(&arg.re);
+            apf_from_int(&result->re, numdivisors_long(n));
+            apf_zero(&result->im);
+        } else if (str_eq(name, "digsum") || str_eq(name, "digitsum")) {
+            long n = apf_to_long(&arg.re);
+            apf_from_int(&result->re, digsum_long(n));
+            apf_zero(&result->im);
+        } else if (str_eq(name, "numdigits") || str_eq(name, "ndigits")) {
+            long n = apf_to_long(&arg.re);
+            apf_from_int(&result->re, numdigits_long(n));
+            apf_zero(&result->im);
+        } else if (str_eq(name, "digitalroot") || str_eq(name, "digroot")) {
+            long n = apf_to_long(&arg.re);
+            apf_from_int(&result->re, digitalroot_long(n));
+            apf_zero(&result->im);
+        } else if (str_eq(name, "reversedigits") || str_eq(name, "revdigits")) {
+            long n = apf_to_long(&arg.re);
+            apf_from_int(&result->re, reverse_long(n));
+            apf_zero(&result->im);
+        } else if (str_eq(name, "ispalindrome")) {
+            long n = apf_to_long(&arg.re);
+            apf_from_int(&result->re, ispalindrome_long(n));
+            apf_zero(&result->im);
+            result_is_boolean = 1;
+        } else if (str_eq(name, "isperfect")) {
+            long n = apf_to_long(&arg.re);
+            apf_from_int(&result->re, isperfect_long(n));
+            apf_zero(&result->im);
+            result_is_boolean = 1;
+        } else if (str_eq(name, "isabundant")) {
+            long n = apf_to_long(&arg.re);
+            apf_from_int(&result->re, isabundant_long(n));
+            apf_zero(&result->im);
+            result_is_boolean = 1;
+        } else if (str_eq(name, "isdeficient")) {
+            long n = apf_to_long(&arg.re);
+            apf_from_int(&result->re, isdeficient_long(n));
+            apf_zero(&result->im);
+            result_is_boolean = 1;
+        } else if (str_eq(name, "triangular") || str_eq(name, "tri_num")) {
+            long n = apf_to_long(&arg.re);
+            apf_from_int(&result->re, triangular_long(n));
+            apf_zero(&result->im);
+        } else if (str_eq(name, "istriangular")) {
+            long n = apf_to_long(&arg.re);
+            apf_from_int(&result->re, istriangular_long(n));
+            apf_zero(&result->im);
+            result_is_boolean = 1;
+        } else if (str_eq(name, "isperfectsquare")) {
+            long n = apf_to_long(&arg.re);
+            apf_from_int(&result->re, issquare_long(n));
+            apf_zero(&result->im);
+            result_is_boolean = 1;
+        } else if (str_eq(name, "pentagonal") || str_eq(name, "pent_num")) {
+            long n = apf_to_long(&arg.re);
+            apf_from_int(&result->re, pentagonal_long(n));
+            apf_zero(&result->im);
+        } else if (str_eq(name, "hexagonal") || str_eq(name, "hex_num")) {
+            long n = apf_to_long(&arg.re);
+            apf_from_int(&result->re, hexagonal_long(n));
+            apf_zero(&result->im);
+        } else if (str_eq(name, "ispower") || str_eq(name, "isperfectpower")) {
+            long n = apf_to_long(&arg.re);
+            apf_from_int(&result->re, ispower_long(n));
+            apf_zero(&result->im);
+            result_is_boolean = 1;
+        } else if (str_eq(name, "subfactorial") || str_eq(name, "derangements")) {
+            long n = apf_to_long(&arg.re);
+            if (n < 0 || n > 100) {
+                printf("Error: subfactorial out of range (0-100)\n");
+                return 0;
+            }
+            apf_subfactorial(&result->re, n);
+            apf_zero(&result->im);
+        } else if (str_eq(name, "bell")) {
+            long n = apf_to_long(&arg.re);
+            if (n < 0 || n > 100) {
+                printf("Error: bell out of range (0-100)\n");
+                return 0;
+            }
+            apf_bell(&result->re, n);
+            apf_zero(&result->im);
+        } else if (str_eq(name, "partition") || str_eq(name, "partitions")) {
+            long n = apf_to_long(&arg.re);
+            if (n < 0 || n > 1000) {
+                printf("Error: partition out of range (0-1000)\n");
+                return 0;
+            }
+            apf_partition(&result->re, n);
+            apf_zero(&result->im);
 #endif
 #ifdef HAVE_BITWISE
         } else if (str_eq(name, "not") || str_eq(name, "bnot")) {
@@ -3746,6 +4145,203 @@ static int parse_value_factor(value_t *result)
                 return 1;
             }
             
+            /* Cholesky decomposition: chol(A) returns L where A = L*L' */
+            if (str_eq(name, "chol") || str_eq(name, "cholesky")) {
+                next_token();
+                if (!parse_value(&pv_arg)) return 0;
+                if (current_token.type != TOK_RPAREN) {
+                    printf("Error: expected ')'\n");
+                    return 0;
+                }
+                next_token();
+                
+                if (pv_arg.type != VAL_MATRIX) {
+                    apfc saved_s = pv_arg.v.scalar;
+                    mat_zero(&pv_arg.v.matrix, 1, 1);
+                    MAT_AT(&pv_arg.v.matrix, 0, 0) = saved_s;
+                    pv_arg.type = VAL_MATRIX;
+                }
+                
+                result->type = VAL_MATRIX;
+                if (!mat_chol(&result->v.matrix, &pv_arg.v.matrix)) {
+                    return 0;
+                }
+                return 1;
+            }
+            
+            /* Null space: null(A) returns basis for null space */
+            if (str_eq(name, "null") || str_eq(name, "nullspace")) {
+                next_token();
+                if (!parse_value(&pv_arg)) return 0;
+                if (current_token.type != TOK_RPAREN) {
+                    printf("Error: expected ')'\n");
+                    return 0;
+                }
+                next_token();
+                
+                if (pv_arg.type != VAL_MATRIX) {
+                    apfc saved_s = pv_arg.v.scalar;
+                    mat_zero(&pv_arg.v.matrix, 1, 1);
+                    MAT_AT(&pv_arg.v.matrix, 0, 0) = saved_s;
+                    pv_arg.type = VAL_MATRIX;
+                }
+                
+                result->type = VAL_MATRIX;
+                mat_null(&result->v.matrix, &pv_arg.v.matrix);
+                return 1;
+            }
+            
+            /* SVD: svd(A) returns singular values as vector */
+            if (str_eq(name, "svd")) {
+                matrix_t U, S, V;
+                int i, min_dim;
+                
+                next_token();
+                if (!parse_value(&pv_arg)) return 0;
+                if (current_token.type != TOK_RPAREN) {
+                    printf("Error: expected ')'\n");
+                    return 0;
+                }
+                next_token();
+                
+                if (pv_arg.type != VAL_MATRIX) {
+                    apfc saved_s = pv_arg.v.scalar;
+                    mat_zero(&pv_arg.v.matrix, 1, 1);
+                    MAT_AT(&pv_arg.v.matrix, 0, 0) = saved_s;
+                    pv_arg.type = VAL_MATRIX;
+                }
+                
+                if (!mat_svd(&U, &S, &V, &pv_arg.v.matrix)) {
+                    printf("Error: SVD failed\n");
+                    return 0;
+                }
+                
+                /* Extract diagonal of S as column vector */
+                min_dim = (S.rows < S.cols) ? S.rows : S.cols;
+                mat_zero(&result->v.matrix, min_dim, 1);
+                for (i = 0; i < min_dim; i++) {
+                    MAT_AT(&result->v.matrix, i, 0) = MAT_AT(&S, i, i);
+                }
+                result->type = VAL_MATRIX;
+                return 1;
+            }
+            
+            /* QR decomposition: qr(A) returns R */
+            if (str_eq(name, "qr")) {
+                matrix_t Q, R;
+                
+                next_token();
+                if (!parse_value(&pv_arg)) return 0;
+                if (current_token.type != TOK_RPAREN) {
+                    printf("Error: expected ')'\n");
+                    return 0;
+                }
+                next_token();
+                
+                if (pv_arg.type != VAL_MATRIX) {
+                    apfc saved_s = pv_arg.v.scalar;
+                    mat_zero(&pv_arg.v.matrix, 1, 1);
+                    MAT_AT(&pv_arg.v.matrix, 0, 0) = saved_s;
+                    pv_arg.type = VAL_MATRIX;
+                }
+                
+                if (!mat_qr(&Q, &R, &pv_arg.v.matrix)) {
+                    printf("Error: QR decomposition failed\n");
+                    return 0;
+                }
+                
+                mat_copy(&result->v.matrix, &R);
+                result->type = VAL_MATRIX;
+                return 1;
+            }
+            
+            /* QR decomposition: qrq(A) returns Q */
+            if (str_eq(name, "qrq")) {
+                matrix_t Q, R;
+                
+                next_token();
+                if (!parse_value(&pv_arg)) return 0;
+                if (current_token.type != TOK_RPAREN) {
+                    printf("Error: expected ')'\n");
+                    return 0;
+                }
+                next_token();
+                
+                if (pv_arg.type != VAL_MATRIX) {
+                    apfc saved_s = pv_arg.v.scalar;
+                    mat_zero(&pv_arg.v.matrix, 1, 1);
+                    MAT_AT(&pv_arg.v.matrix, 0, 0) = saved_s;
+                    pv_arg.type = VAL_MATRIX;
+                }
+                
+                if (!mat_qr(&Q, &R, &pv_arg.v.matrix)) {
+                    printf("Error: QR decomposition failed\n");
+                    return 0;
+                }
+                
+                mat_copy(&result->v.matrix, &Q);
+                result->type = VAL_MATRIX;
+                return 1;
+            }
+            
+            /* Schur decomposition: schur(A) returns T */
+            if (str_eq(name, "schur")) {
+                matrix_t Q, T;
+                
+                next_token();
+                if (!parse_value(&pv_arg)) return 0;
+                if (current_token.type != TOK_RPAREN) {
+                    printf("Error: expected ')'\n");
+                    return 0;
+                }
+                next_token();
+                
+                if (pv_arg.type != VAL_MATRIX) {
+                    apfc saved_s = pv_arg.v.scalar;
+                    mat_zero(&pv_arg.v.matrix, 1, 1);
+                    MAT_AT(&pv_arg.v.matrix, 0, 0) = saved_s;
+                    pv_arg.type = VAL_MATRIX;
+                }
+                
+                if (!mat_schur(&Q, &T, &pv_arg.v.matrix)) {
+                    printf("Error: Schur decomposition failed\n");
+                    return 0;
+                }
+                
+                mat_copy(&result->v.matrix, &T);
+                result->type = VAL_MATRIX;
+                return 1;
+            }
+            
+            /* Schur decomposition: schurq(A) returns Q */
+            if (str_eq(name, "schurq")) {
+                matrix_t Q, T;
+                
+                next_token();
+                if (!parse_value(&pv_arg)) return 0;
+                if (current_token.type != TOK_RPAREN) {
+                    printf("Error: expected ')'\n");
+                    return 0;
+                }
+                next_token();
+                
+                if (pv_arg.type != VAL_MATRIX) {
+                    apfc saved_s = pv_arg.v.scalar;
+                    mat_zero(&pv_arg.v.matrix, 1, 1);
+                    MAT_AT(&pv_arg.v.matrix, 0, 0) = saved_s;
+                    pv_arg.type = VAL_MATRIX;
+                }
+                
+                if (!mat_schur(&Q, &T, &pv_arg.v.matrix)) {
+                    printf("Error: Schur decomposition failed\n");
+                    return 0;
+                }
+                
+                mat_copy(&result->v.matrix, &Q);
+                result->type = VAL_MATRIX;
+                return 1;
+            }
+            
             /* Array manipulation functions that return matrices */
             if (str_eq(name, "fliplr") || str_eq(name, "flipud") || str_eq(name, "flip") ||
                 str_eq(name, "sort") || str_eq(name, "cumsum") || str_eq(name, "cumprod") ||
@@ -4637,8 +5233,7 @@ static int parse_value_factor(value_t *result)
             if (str_eq(name, "prctile")) {
                 int n, i, j, idx;
                 apfc p_arg;
-                double p, pos;
-                apf frac, one_minus_frac;
+                apf p_val, pos_val, n_minus_1, hundred, frac, one_minus_frac, idx_apf;
                 
                 next_token();
                 if (!parse_value(&pv_arg)) return 0;
@@ -4654,15 +5249,21 @@ static int parse_value_factor(value_t *result)
                 }
                 next_token();
                 if (!parse_expr(&p_arg)) return 0;
-                p = apf_to_double(&p_arg.re);
+                apf_copy(&p_val, &p_arg.re);
                 if (current_token.type != TOK_RPAREN) {
                     printf("Error: expected ')'\n");
                     return 0;
                 }
                 next_token();
                 
-                if (p < 0) p = 0;
-                if (p > 100) p = 100;
+                /* Clamp p to [0, 100] */
+                {
+                    apf zero_apf, hundred_apf;
+                    apf_zero(&zero_apf);
+                    apf_from_int(&hundred_apf, 100);
+                    if (apf_cmp(&p_val, &zero_apf) < 0) apf_zero(&p_val);
+                    if (apf_cmp(&p_val, &hundred_apf) > 0) apf_from_int(&p_val, 100);
+                }
                 
                 n = pv_arg.v.matrix.rows * pv_arg.v.matrix.cols;
                 
@@ -4683,9 +5284,14 @@ static int parse_value_factor(value_t *result)
                     }
                 }
                 
-                /* Linear interpolation */
-                pos = (p / 100.0) * (n - 1);
-                idx = (int)pos;
+                /* Linear interpolation: pos = (p / 100) * (n - 1) */
+                apf_from_int(&hundred, 100);
+                apf_from_int(&n_minus_1, n - 1);
+                apf_div(&pos_val, &p_val, &hundred);
+                apf_mul(&pos_val, &pos_val, &n_minus_1);
+                
+                idx = apf_to_long(&pos_val);
+                if (idx < 0) idx = 0;
                 if (idx >= n - 1) {
                     int ri = (n-1) % pv_tmp_mat.rows;
                     int ci = (n-1) / pv_tmp_mat.rows;
@@ -4696,7 +5302,11 @@ static int parse_value_factor(value_t *result)
                     int c1 = idx / pv_tmp_mat.rows;
                     int r2 = (idx+1) % pv_tmp_mat.rows;
                     int c2 = (idx+1) / pv_tmp_mat.rows;
-                    apf_from_double(&frac, pos - idx);
+                    
+                    /* frac = pos - idx */
+                    apf_from_int(&idx_apf, idx);
+                    apf_sub(&frac, &pos_val, &idx_apf);
+                    
                     apf_from_int(&one_minus_frac, 1);
                     apf_sub(&one_minus_frac, &one_minus_frac, &frac);
                     result->type = VAL_SCALAR;
@@ -4715,7 +5325,7 @@ static int parse_value_factor(value_t *result)
             if (str_eq(name, "iqr")) {
                 int n, i, j;
                 apf q1, q3;
-                double pos;
+                apf pos_val, n_minus_1, quarter, three_quarters, idx_apf;
                 int idx;
                 
                 next_token();
@@ -4752,9 +5362,13 @@ static int parse_value_factor(value_t *result)
                     }
                 }
                 
-                /* Q1 (25th percentile) */
-                pos = 0.25 * (n - 1);
-                idx = (int)pos;
+                apf_from_int(&n_minus_1, n - 1);
+                
+                /* Q1 (25th percentile): pos = 0.25 * (n - 1) */
+                apf_from_str(&quarter, "0.25");
+                apf_mul(&pos_val, &quarter, &n_minus_1);
+                idx = apf_to_long(&pos_val);
+                if (idx < 0) idx = 0;
                 if (idx >= n - 1) {
                     int ri = (n-1) % pv_tmp_mat.rows;
                     int ci = (n-1) / pv_tmp_mat.rows;
@@ -4765,7 +5379,8 @@ static int parse_value_factor(value_t *result)
                     int r2 = (idx+1) % pv_tmp_mat.rows;
                     int c2 = (idx+1) / pv_tmp_mat.rows;
                     apf frac, one_minus, tmp;
-                    apf_from_double(&frac, pos - idx);
+                    apf_from_int(&idx_apf, idx);
+                    apf_sub(&frac, &pos_val, &idx_apf);
                     apf_from_int(&one_minus, 1);
                     apf_sub(&one_minus, &one_minus, &frac);
                     apf_mul(&q1, &MAT_AT(&pv_tmp_mat, r1, c1).re, &one_minus);
@@ -4773,9 +5388,11 @@ static int parse_value_factor(value_t *result)
                     apf_add(&q1, &q1, &tmp);
                 }
                 
-                /* Q3 (75th percentile) */
-                pos = 0.75 * (n - 1);
-                idx = (int)pos;
+                /* Q3 (75th percentile): pos = 0.75 * (n - 1) */
+                apf_from_str(&three_quarters, "0.75");
+                apf_mul(&pos_val, &three_quarters, &n_minus_1);
+                idx = apf_to_long(&pos_val);
+                if (idx < 0) idx = 0;
                 if (idx >= n - 1) {
                     int ri = (n-1) % pv_tmp_mat.rows;
                     int ci = (n-1) / pv_tmp_mat.rows;
@@ -4786,7 +5403,8 @@ static int parse_value_factor(value_t *result)
                     int r2 = (idx+1) % pv_tmp_mat.rows;
                     int c2 = (idx+1) / pv_tmp_mat.rows;
                     apf frac, one_minus, tmp;
-                    apf_from_double(&frac, pos - idx);
+                    apf_from_int(&idx_apf, idx);
+                    apf_sub(&frac, &pos_val, &idx_apf);
                     apf_from_int(&one_minus, 1);
                     apf_sub(&one_minus, &one_minus, &frac);
                     apf_mul(&q3, &MAT_AT(&pv_tmp_mat, r1, c1).re, &one_minus);
@@ -7518,8 +8136,8 @@ static int parse_value_factor(value_t *result)
             /* norminv(p) - inverse standard normal CDF (quantile function) */
             /* Uses Beasley-Springer-Moro approximation */
             if (str_eq(name, "norminv") || str_eq(name, "normalinv") || str_eq(name, "probit")) {
-                apf p, t, c0, c1, c2, d1, d2, d3, num, den, half, one;
-                double pd;
+                apf p, t, c0, c1, c2, d1, d2, d3, num, den, half, one, zero_apf, one_apf;
+                int p_leq_half;
                 
                 next_token();
                 if (!parse_expr(&pv_arg.v.scalar)) return 0;
@@ -7529,15 +8147,19 @@ static int parse_value_factor(value_t *result)
                 }
                 next_token();
                 
-                p = pv_arg.v.scalar.re;
-                pd = apf_to_double(&p);
+                apf_copy(&p, &pv_arg.v.scalar.re);
+                apf_zero(&zero_apf);
+                apf_from_int(&one_apf, 1);
                 
-                if (pd <= 0.0 || pd >= 1.0) {
-                    if (pd <= 0.0) {
-                        apf_set_inf(&result->v.scalar.re, 1);  /* -Inf */
-                    } else {
-                        apf_set_inf(&result->v.scalar.re, 0);  /* +Inf */
-                    }
+                /* Check bounds: p <= 0 or p >= 1 */
+                if (apf_cmp(&p, &zero_apf) <= 0) {
+                    apf_set_inf(&result->v.scalar.re, 1);  /* -Inf */
+                    apf_zero(&result->v.scalar.im);
+                    result->type = VAL_SCALAR;
+                    return 1;
+                }
+                if (apf_cmp(&p, &one_apf) >= 0) {
+                    apf_set_inf(&result->v.scalar.re, 0);  /* +Inf */
                     apf_zero(&result->v.scalar.im);
                     result->type = VAL_SCALAR;
                     return 1;
@@ -7547,9 +8169,9 @@ static int parse_value_factor(value_t *result)
                 apf_from_str(&half, "0.5");
                 apf_from_int(&one, 1);
                 
-                if (pd > 0.5) {
+                p_leq_half = (apf_cmp(&p, &half) <= 0);
+                if (!p_leq_half) {
                     apf_sub(&p, &one, &p);
-                    pd = 1.0 - pd;
                 }
                 
                 /* t = sqrt(-2*ln(p)) for p < 0.5 */
@@ -7598,7 +8220,7 @@ static int parse_value_factor(value_t *result)
                 apf_sub(&result->v.scalar.re, &t, &num);
                 
                 /* Negate if original p <= 0.5 */
-                if (apf_to_double(&pv_arg.v.scalar.re) <= 0.5) {
+                if (p_leq_half) {
                     apf_neg(&result->v.scalar.re, &result->v.scalar.re);
                 }
                 

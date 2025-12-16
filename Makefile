@@ -23,7 +23,7 @@ SOURCES = apf.c apfx.c apfc.c apf_native.c \
           matrix.c matrix_ops.c matrix_linalg.c \
           matrix_rand.c lexer.c parser.c runtime.c format.c commands.c \
           repl.c plot.c rpn.c solver.c mathx.c stats.c tvm.c newton.c \
-          orbital.c optim.c main.c
+          orbital.c optim.c help.c main.c
 
 # Object directories for each precision
 OBJDIR_128 = $(OBJDIR)/128
