@@ -23,7 +23,16 @@ SOURCES = apf.c apfx.c apfc.c apf_native.c \
           matrix.c matrix_ops.c matrix_linalg.c \
           matrix_rand.c lexer.c parser.c runtime.c format.c commands.c \
           repl.c plot.c rpn.c solver.c mathx.c stats.c tvm.c newton.c \
-          orbital.c optim.c help.c main.c
+          orbital.c optim.c help.c \
+          func_trig.c func_exp.c func_complex.c func_round.c \
+          func_number.c func_special.c func_stats.c func_linalg.c \
+          func_matrix.c func_misc.c func_dispatch.c \
+          main.c
+
+# Function documentation files (for dependency tracking)
+FUNC_DOCS = func_trig.c func_exp.c func_complex.c func_round.c \
+            func_number.c func_special.c func_stats.c func_linalg.c \
+            func_matrix.c func_misc.c func_dispatch.c
 
 # Object directories for each precision
 OBJDIR_128 = $(OBJDIR)/128
@@ -214,3 +223,7 @@ $(OBJDIR_128)/lexer.o $(OBJDIR_256)/lexer.o $(OBJDIR_64)/lexer.o: $(SRCDIR)/lexe
 $(OBJDIR_128)/apf.o $(OBJDIR_256)/apf.o $(OBJDIR_64)/apf.o: $(SRCDIR)/apf.c $(SRCDIR)/apf.h
 $(OBJDIR_128)/apfx.o $(OBJDIR_256)/apfx.o $(OBJDIR_64)/apfx.o: $(SRCDIR)/apfx.c $(SRCDIR)/apfx.h $(SRCDIR)/apf.h
 $(OBJDIR_128)/apfc.o $(OBJDIR_256)/apfc.o $(OBJDIR_64)/apfc.o: $(SRCDIR)/apfc.c $(SRCDIR)/apfc.h $(SRCDIR)/apf.h
+
+sample_cluster:
+	@bash samples/pca_cluster_demo.sh bin/sc
+

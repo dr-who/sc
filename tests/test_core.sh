@@ -394,7 +394,7 @@ test_starts "2^10000" "1.995063116"
 # ========== ORBITAL MECHANICS ==========
 echo ""
 echo "=== Orbital Mechanics ==="
-test_contains "orb mu earth" "3.986004418"
+test_contains "orb mu earth" "398600.4418"
 test_contains "orb radius earth" "6371"
 test_contains "orb v_circ 398600.4418 6778" "7.66"
 test_contains "orb v_esc 398600.4418 6778" "10.8"

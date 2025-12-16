@@ -255,4 +255,7 @@ int do_rossler_text(long a_num, long a_den, long b_num, long b_den,
 int do_parametric_text(const char *xfunc, const char *yfunc,
                        apf *tmin, apf *tmax, int steps);
 
+/* Evaluate a single expression line (for demos) */
+int eval_expr_line(const char *line, int quiet);
+
 #endif /* SCALC_H */

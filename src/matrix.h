@@ -137,6 +137,13 @@ int mat_null(matrix_t *N, const matrix_t *A);
 /* ========== Schur Decomposition (matrix_linalg.c) ========== */
 int mat_schur(matrix_t *Q, matrix_t *T, const matrix_t *A);
 
+/* ========== PCA and Clustering (matrix_linalg.c) ========== */
+int mat_pca(matrix_t *coeff, matrix_t *score, matrix_t *latent, const matrix_t *X);
+int mat_pca_reduce(matrix_t *result, const matrix_t *X, int k);
+int mat_kmeans(matrix_t *idx, matrix_t *centroids, const matrix_t *X, int k);
+int mat_pdist(matrix_t *D, const matrix_t *X);
+void mat_silhouette(apfc *score, const matrix_t *X, const matrix_t *idx);
+
 /* ========== Concatenation (matrix_ops.c) ========== */
 int mat_hcat(matrix_t *r, const matrix_t *a, const matrix_t *b);
 int mat_vcat(matrix_t *r, const matrix_t *a, const matrix_t *b);

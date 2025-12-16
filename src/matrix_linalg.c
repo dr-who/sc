@@ -1208,3 +1208,304 @@ int mat_schur(matrix_t *Q, matrix_t *T, const matrix_t *A)
     return 1;
 }
 
+/* ========== PCA (Principal Component Analysis) ========== */
+
+int mat_pca(matrix_t *coeff, matrix_t *score, matrix_t *latent, const matrix_t *X)
+{
+    int m, n, i, j;
+    matrix_t centered;
+    apfc col_mean, diff;
+    apf sum_r;
+    
+    m = X->rows;
+    n = X->cols;
+    
+    if (m < 2) {
+        printf("Error: PCA requires at least 2 observations\n");
+        return 0;
+    }
+    
+    /* Center the data (subtract column means) */
+    mat_zero(&centered, m, n);
+    for (j = 0; j < n; j++) {
+        apf_zero(&sum_r);
+        for (i = 0; i < m; i++) {
+            apf_add(&sum_r, &sum_r, &MAT_AT(X, i, j).re);
+        }
+        apf_from_int(&col_mean.re, m);
+        apf_div(&col_mean.re, &sum_r, &col_mean.re);
+        apf_zero(&col_mean.im);
+        
+        for (i = 0; i < m; i++) {
+            apfc_sub(&diff, &MAT_AT(X, i, j), &col_mean);
+            MAT_AT(&centered, i, j) = diff;
+        }
+    }
+    
+    /* SVD on centered data: X = U*S*V' */
+    /* coeff = V, score = U*S, latent = diag(S)^2/(m-1) */
+    {
+        matrix_t U, S, V;
+        
+        if (!mat_svd(&U, &S, &V, &centered)) {
+            printf("Error: PCA SVD failed\n");
+            return 0;
+        }
+        
+        mat_copy(coeff, &V);
+        
+        /* latent = singular values squared / (m-1) = variances */
+        mat_zero(latent, n, 1);
+        for (i = 0; i < n && i < m; i++) {
+            apf var_i, m_minus_1;
+            apf_mul(&var_i, &MAT_AT(&S, i, i).re, &MAT_AT(&S, i, i).re);
+            apf_from_int(&m_minus_1, m - 1);
+            apf_div(&MAT_AT(latent, i, 0).re, &var_i, &m_minus_1);
+        }
+        
+        /* score = centered * coeff */
+        mat_mul(score, &centered, coeff);
+    }
+    
+    return 1;
+}
+
+int mat_pca_reduce(matrix_t *result, const matrix_t *X, int k)
+{
+    matrix_t coeff, score, latent;
+    int i, j, n;
+    
+    if (k < 1) k = 1;
+    
+    if (!mat_pca(&coeff, &score, &latent, X)) {
+        return 0;
+    }
+    
+    n = score.rows;
+    if (k > score.cols) k = score.cols;
+    
+    mat_zero(result, n, k);
+    for (i = 0; i < n; i++) {
+        for (j = 0; j < k; j++) {
+            MAT_AT(result, i, j) = MAT_AT(&score, i, j);
+        }
+    }
+    
+    return 1;
+}
+
+/* ========== K-Means Clustering ========== */
+
+int mat_kmeans(matrix_t *idx, matrix_t *centroids, const matrix_t *X, int k)
+{
+    int m, n, i, j, c, iter;
+    int max_iter = 100;
+    int changed;
+    int counts[MAT_MAX_ROWS];
+    apf min_dist, dist, diff_r, diff_sq, sum_sq;
+    int best_cluster;
+    
+    m = X->rows;
+    n = X->cols;
+    
+    if (k < 1) k = 1;
+    if (k > m) k = m;
+    
+    mat_zero(idx, m, 1);
+    mat_zero(centroids, k, n);
+    
+    /* Initialize centroids spread across data */
+    {
+        int step = (m > k) ? m / k : 1;
+        for (i = 0; i < k; i++) {
+            for (j = 0; j < n; j++) {
+                MAT_AT(centroids, i, j) = MAT_AT(X, (i * step) % m, j);
+            }
+        }
+    }
+    
+    for (iter = 0; iter < max_iter; iter++) {
+        changed = 0;
+        
+        /* Assignment step */
+        for (i = 0; i < m; i++) {
+            apf_from_int(&min_dist, 1);
+            min_dist.exp += 100;
+            best_cluster = 0;
+            
+            for (c = 0; c < k; c++) {
+                apf_zero(&sum_sq);
+                for (j = 0; j < n; j++) {
+                    apf_sub(&diff_r, &MAT_AT(X, i, j).re, &MAT_AT(centroids, c, j).re);
+                    apf_mul(&diff_sq, &diff_r, &diff_r);
+                    apf_add(&sum_sq, &sum_sq, &diff_sq);
+                }
+                dist = sum_sq;
+                
+                if (apf_lt(&dist, &min_dist)) {
+                    min_dist = dist;
+                    best_cluster = c;
+                }
+            }
+            
+            {
+                int old_cluster = apf_to_long(&MAT_AT(idx, i, 0).re);
+                if (old_cluster != best_cluster) changed = 1;
+                apf_from_int(&MAT_AT(idx, i, 0).re, best_cluster);
+                apf_zero(&MAT_AT(idx, i, 0).im);
+            }
+        }
+        
+        /* Update step */
+        for (c = 0; c < k; c++) {
+            counts[c] = 0;
+            for (j = 0; j < n; j++) {
+                apf_zero(&MAT_AT(centroids, c, j).re);
+                apf_zero(&MAT_AT(centroids, c, j).im);
+            }
+        }
+        
+        for (i = 0; i < m; i++) {
+            c = apf_to_long(&MAT_AT(idx, i, 0).re);
+            if (c >= 0 && c < k) {
+                counts[c]++;
+                for (j = 0; j < n; j++) {
+                    apf_add(&MAT_AT(centroids, c, j).re, 
+                            &MAT_AT(centroids, c, j).re, 
+                            &MAT_AT(X, i, j).re);
+                }
+            }
+        }
+        
+        for (c = 0; c < k; c++) {
+            if (counts[c] > 0) {
+                apf cnt;
+                apf_from_int(&cnt, counts[c]);
+                for (j = 0; j < n; j++) {
+                    apf_div(&MAT_AT(centroids, c, j).re, 
+                            &MAT_AT(centroids, c, j).re, &cnt);
+                }
+            }
+        }
+        
+        if (!changed) break;
+    }
+    
+    return 1;
+}
+
+/* ========== Pairwise Distance ========== */
+
+int mat_pdist(matrix_t *D, const matrix_t *X)
+{
+    int m, n, i, j, d, pos;
+    int num_pairs;
+    apf diff_r, diff_sq, sum_sq, dist;
+    
+    m = X->rows;
+    n = X->cols;
+    num_pairs = (m * (m - 1)) / 2;
+    
+    mat_zero(D, 1, num_pairs);
+    
+    pos = 0;
+    for (i = 0; i < m - 1; i++) {
+        for (j = i + 1; j < m; j++) {
+            apf_zero(&sum_sq);
+            for (d = 0; d < n; d++) {
+                apf_sub(&diff_r, &MAT_AT(X, i, d).re, &MAT_AT(X, j, d).re);
+                apf_mul(&diff_sq, &diff_r, &diff_r);
+                apf_add(&sum_sq, &sum_sq, &diff_sq);
+            }
+            apf_sqrt(&dist, &sum_sq);
+            MAT_AT(D, 0, pos).re = dist;
+            pos++;
+        }
+    }
+    
+    return 1;
+}
+
+/* ========== Silhouette Score ========== */
+
+void mat_silhouette(apfc *score, const matrix_t *X, const matrix_t *idx)
+{
+    int m, n, i, j, d, ci, cj;
+    apf sum_sil, sil_i, a_i, b_i;
+    apf dist, diff_r, diff_sq, sum_sq;
+    apf min_b, tmp, max_ab;
+    apf cluster_dist[MAT_MAX_ROWS];
+    int cluster_count[MAT_MAX_ROWS];
+    int k_clusters;
+    
+    m = X->rows;
+    n = X->cols;
+    
+    k_clusters = 0;
+    for (i = 0; i < m; i++) {
+        int c = apf_to_long(&MAT_AT(idx, i, 0).re);
+        if (c >= k_clusters) k_clusters = c + 1;
+    }
+    
+    apf_zero(&sum_sil);
+    
+    for (i = 0; i < m; i++) {
+        ci = apf_to_long(&MAT_AT(idx, i, 0).re);
+        
+        for (j = 0; j < k_clusters; j++) {
+            apf_zero(&cluster_dist[j]);
+            cluster_count[j] = 0;
+        }
+        
+        for (j = 0; j < m; j++) {
+            if (i == j) continue;
+            cj = apf_to_long(&MAT_AT(idx, j, 0).re);
+            
+            apf_zero(&sum_sq);
+            for (d = 0; d < n; d++) {
+                apf_sub(&diff_r, &MAT_AT(X, i, d).re, &MAT_AT(X, j, d).re);
+                apf_mul(&diff_sq, &diff_r, &diff_r);
+                apf_add(&sum_sq, &sum_sq, &diff_sq);
+            }
+            apf_sqrt(&dist, &sum_sq);
+            
+            apf_add(&cluster_dist[cj], &cluster_dist[cj], &dist);
+            cluster_count[cj]++;
+        }
+        
+        if (cluster_count[ci] > 0) {
+            apf cnt;
+            apf_from_int(&cnt, cluster_count[ci]);
+            apf_div(&a_i, &cluster_dist[ci], &cnt);
+        } else {
+            apf_zero(&a_i);
+        }
+        
+        apf_from_int(&min_b, 1);
+        min_b.exp += 100;
+        for (j = 0; j < k_clusters; j++) {
+            if (j == ci || cluster_count[j] == 0) continue;
+            apf_from_int(&tmp, cluster_count[j]);
+            apf_div(&tmp, &cluster_dist[j], &tmp);
+            if (apf_lt(&tmp, &min_b)) min_b = tmp;
+        }
+        b_i = min_b;
+        
+        apf_sub(&sil_i, &b_i, &a_i);
+        max_ab = apf_gt(&a_i, &b_i) ? a_i : b_i;
+        if (!apf_iszero(&max_ab)) {
+            apf_div(&sil_i, &sil_i, &max_ab);
+        }
+        
+        apf_add(&sum_sil, &sum_sil, &sil_i);
+    }
+    
+    if (m > 0) {
+        apf_from_int(&tmp, m);
+        apf_div(&score->re, &sum_sil, &tmp);
+    } else {
+        apf_zero(&score->re);
+    }
+    apf_zero(&score->im);
+}
+

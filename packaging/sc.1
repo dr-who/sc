@@ -42,7 +42,7 @@ Multiplication (Unicode × supported)
 Division (Unicode ÷ supported)
 .TP
 .B %
-Comment (MATLAB-style: everything after % is ignored)
+Modulo (floor division remainder)
 .TP
 .B ^
 Exponentiation (right-associative: 2^3^2 = 2^9 = 512)
@@ -135,21 +135,6 @@ Positive infinity
 .TP
 .B nan
 Not a Number
-.TP
-.B true
-Boolean true (1)
-.TP
-.B false
-Boolean false (0)
-.TP
-.B eps
-Machine epsilon (~2.2e-16)
-.TP
-.B realmax
-Largest finite floating-point value (~1.8e308)
-.TP
-.B realmin
-Smallest positive normalized value (~2.2e-308)
 .SH VARIABLES
 Variables are assigned with \fB=\fR:
 .PP
@@ -166,6 +151,17 @@ Variables are assigned with \fB=\fR:
 Variable names are case-sensitive and can contain letters, numbers, and
 underscores (must start with a letter).
 .SS Commands
+.TP
+.B help
+Show general help overview
+.TP
+.B help \fIfunction\fR
+Show detailed help for a specific function, including syntax and examples.
+Example: \\fBhelp sin\\fR, \\fBhelp pca\\fR, \\fBhelp kmeans\\fR
+.TP
+.B demo \fIfunction\fR
+Run interactive demonstration of a function with live examples.
+Example: \\fBdemo svd\\fR, \\fBdemo qr\\fR
 .TP
 .B vars
 List all defined variables
@@ -189,225 +185,2267 @@ Use gradians (400 grad = full circle)
 .PP
 The angle mode affects \fBsin\fR, \fBcos\fR, \fBtan\fR, \fBsec\fR, \fBcsc\fR, \fBcot\fR and their inverses, as well as \fBatan2\fR.
 .SH FUNCTIONS
-.SS Trigonometric
-.TP
-.B sin(x), cos(x), tan(x)
-Sine, cosine, tangent
-.TP
-.B asin(x), acos(x), atan(x)
-Inverse trigonometric functions (arcsin, arccos, arctan)
-.TP
-.B atan2(y, x)
-Two-argument arctangent
-.TP
-.B sec(x), csc(x), cot(x)
-Reciprocal functions: secant (1/cos), cosecant (1/sin), cotangent (1/tan)
-.TP
-.B asec(x), acsc(x), acot(x)
-Inverse reciprocal functions
-.SS Hyperbolic
-.TP
-.B sinh(x), cosh(x), tanh(x)
-Hyperbolic sine, cosine, tangent
-.TP
-.B sech(x), csch(x), coth(x)
-Hyperbolic secant, cosecant, cotangent
-.TP
-.B asinh(x), acosh(x), atanh(x)
-Inverse hyperbolic functions
-.TP
-.B asech(x), acsch(x), acoth(x)
-Inverse hyperbolic secant, cosecant, cotangent
-.SS Exponential and Logarithmic
-.TP
-.B exp(x)
-e^x
-.TP
-.B exp2(x) \fRor\fB pow2(x)
-2^x
-.TP
-.B ln(x) \fRor\fB log(x)
-Natural logarithm
-.TP
-.B log10(x)
-Base-10 logarithm
-.TP
-.B log2(x)
-Base-2 logarithm
-.TP
-.B logb(x, base)
-Logarithm with arbitrary base
-.TP
-.B sqrt(x)
-Square root
-.SS Angle Conversion
+This section documents all available functions organized by category.
+
+.SS Angle
 .TP
 .B deg2rad(x)
 Convert degrees to radians
+.RS
+.nf
+deg2rad(180) = pi
+deg2rad(90) = pi/2
+.fi
+.RE
+.TP
+.B hypot(x, y)
+Hypotenuse: sqrt(x^2 + y^2)
+.RS
+.nf
+hypot(3, 4) = 5
+.fi
+.RE
 .TP
 .B rad2deg(x)
 Convert radians to degrees
+.RS
+.nf
+rad2deg(pi) = 180
+rad2deg(pi/2) = 90
+.fi
+.RE
 .TP
-.B sind(x), cosd(x), tand(x)
-Trigonometric functions with argument in degrees
+.B wrap180(x)
+Wrap angle to [-180, 180]
+.RS
+.nf
+wrap180(270) = -90
+.fi
+.RE
 .TP
-.B secd(x), cscd(x), cotd(x)
-Reciprocal trig functions with argument in degrees
+.B wrap360(x)
+Wrap angle to [0, 360)
+.RS
+.nf
+wrap360(370) = 10
+wrap360(-10) = 350
+.fi
+.RE
 .TP
-.B asind(x), acosd(x), atand(x)
-Inverse trig functions returning degrees
+.B wrapToPi(x)
+Wrap angle to [-pi, pi]
+.RS
+.nf
+wrapToPi(4) = 4-2*pi
+.fi
+.RE
+
+.SS Bitwise
 .TP
-.B asecd(x), acscd(x), acotd(x)
-Inverse reciprocal trig functions returning degrees
+.B bitand(a, b)
+Bitwise AND
+.RS
+.nf
+bitand(15, 7) = 7
+bitand(255, 15) = 15
+.fi
+.RE
 .TP
-.B atan2d(y, x)
-Two-argument arctangent returning degrees
-.SS Rounding and Remainders
+.B bitor(a, b)
+Bitwise OR
+.RS
+.nf
+bitor(8, 4) = 12
+bitor(240, 15) = 255
+.fi
+.RE
 .TP
-.B floor(x)
-Greatest integer ≤ x
+.B bitshift(a, k)
+Shift left (k>0) or right (k<0)
+.RS
+.nf
+bitshift(1, 4) = 16
+.fi
+.RE
 .TP
-.B ceil(x)
-Smallest integer ≥ x
+.B bitxor(a, b)
+Bitwise XOR
+.RS
+.nf
+bitxor(255, 170) = 85
+.fi
+.RE
 .TP
-.B trunc(x) \fRor\fB int(x)
-Integer part (truncate toward zero)
+.B bnot(a) or not(a)
+Bitwise NOT
+.RS
+.nf
+bnot(0) = -1
+.fi
+.RE
 .TP
-.B frac(x)
-Fractional part (x - trunc(x))
+.B shl(a, k)
+Shift left by k bits
+.RS
+.nf
+shl(1, 4) = 16
+.fi
+.RE
 .TP
-.B mod(a, b)
-Modulo (floor division remainder: a - b*floor(a/b))
+.B shr(a, k)
+Shift right by k bits
+.RS
+.nf
+shr(16, 2) = 4
+.fi
+.RE
+
+.SS Complex
 .TP
-.B abs(x)
-Absolute value
-.SS Complex Numbers
+.B abs(x) or abs(z)
+Absolute value or complex magnitude
+.RS
+.nf
+abs(-5) = 5
+abs(3+4i) = 5
+.fi
+.RE
 .TP
-.B re(z) \fRor\fB real(z)
-Real part
+.B angle(z)
+Phase angle in radians (alias for arg)
+.RS
+.nf
+angle(1+i) = pi/4
+.fi
+.RE
 .TP
-.B im(z) \fRor\fB imag(z)
-Imaginary part
+.B arg(z)
+Argument (phase angle) in radians
+.RS
+.nf
+arg(1+i) = pi/4
+arg(-1) = pi
+.fi
+.RE
+.TP
+.B cart2pol(x, y)
+Cartesian to polar: returns [r, theta]
+.RS
+.nf
+cart2pol(3, 4) = [5, 0.927]
+.fi
+.RE
+.TP
+.B complex(a, b)
+Create complex number a + bi
+.RS
+.nf
+complex(3, 4) = 3+4i
+.fi
+.RE
 .TP
 .B conj(z)
 Complex conjugate
-.TP
-.B arg(z)
-Argument (phase angle)
-.TP
-.B abs(z)
-Magnitude (modulus)
-.PP
-Complex numbers are entered as \fBa + bi\fR or \fBa + b*i\fR:
-.PP
 .RS
->>> (3 + 4i) * (1 - 2i)
-.br
-= 11 - 2i
-.br
->>> sqrt(-1)
-.br
-= 1i
+.nf
+conj(3+4i) = 3-4i
+conj(5) = 5
+.fi
 .RE
-.SS Combinatorics
 .TP
-.B fact(n) \fRor\fB n!
-Factorial
+.B im(z) or imag(z)
+Imaginary part of complex number
+.RS
+.nf
+im(3+4i) = 4
+im(5) = 0
+.fi
+.RE
 .TP
-.B ncr(n, r) \fRor\fB choose(n, r)
-Combinations (n choose r)
+.B imag(z)
+Imaginary part (alias for im)
+.RS
+.nf
+imag(3+4i) = 4
+.fi
+.RE
 .TP
-.B npr(n, r) \fRor\fB perm(n, r)
-Permutations
+.B phase(z)
+Phase angle (alias for arg)
+.RS
+.nf
+phase(1+i) = pi/4
+.fi
+.RE
+.TP
+.B pol2cart(r, theta)
+Polar to Cartesian: returns [x, y]
+.RS
+.nf
+pol2cart(5, 0) = [5, 0]
+.fi
+.RE
+.TP
+.B re(z) or real(z)
+Real part of complex number
+.RS
+.nf
+re(3+4i) = 3
+re(5) = 5
+.fi
+.RE
+.TP
+.B real(z)
+Real part (alias for re)
+.RS
+.nf
+real(3+4i) = 3
+.fi
+.RE
+
+.SS Coordinates
+.TP
+.B cart2sph(x, y, z)
+Cartesian to spherical
+.RS
+.nf
+cart2sph(1, 2, 3)
+.fi
+.RE
+.TP
+.B sph2cart(az, el, r)
+Spherical to Cartesian
+.RS
+.nf
+sph2cart(0, 0, 1)
+.fi
+.RE
+
+.SS Data Science
+.TP
+.B corrcoef(X)
+Correlation coefficient matrix
+.RS
+.nf
+corrcoef([1,2,3;4,5,6]')
+Pairwise correlations
+.fi
+.RE
+.TP
+.B cov(X)
+Covariance matrix
+.RS
+.nf
+cov([1,2,3;4,5,6]')
+.fi
+.RE
+.TP
+.B [idx,C] = kmeans(X, k)
+K-means clustering
+.RS
+.nf
+[idx,C] = kmeans(X, 3)
+idx=cluster labels, C=centroids
+scatter with color: idx gives cluster
+.fi
+.RE
+.TP
+.B normalize(X)
+Normalize rows to unit length
+.RS
+.nf
+normalize([3,4;1,0])
+Each row has norm=1
+.fi
+.RE
+.TP
+.B [coeff,score,latent] = pca(X)
+Principal Component Analysis
+.RS
+.nf
+X = rand(100,5); [C,S,L] = pca(X)
+C=coeffs, S=scores, L=variance
+score = (X - mean(X)) * coeff
+.fi
+.RE
+.TP
+.B pcareduce(X, k)
+Reduce data to k principal components
+.RS
+.nf
+Y = pcareduce(X, 2)
+Reduce to 2D for visualization
+Example: X=rand(50,10); plot(pcareduce(X,2))
+.fi
+.RE
+.TP
+.B pdist(X)
+Pairwise distances between rows
+.RS
+.nf
+pdist([0,0;1,0;0,1])
+Returns distance vector
+.fi
+.RE
+.TP
+.B silhouette(X, idx)
+Clustering quality score
+.RS
+.nf
+silhouette(X, idx)
+Higher is better (max 1)
+.fi
+.RE
+.TP
+.B zscore(X)
+Standardize columns to mean=0, std=1
+.RS
+.nf
+zscore([1,2,3;4,5,6])
+Each column normalized
+.fi
+.RE
+
+.SS Exponential
+.TP
+.B cbrt(x)
+Cube root
+.RS
+.nf
+cbrt(8) = 2
+cbrt(27) = 3
+cbrt(-8) = -2
+.fi
+.RE
+.TP
+.B exp(x)
+Exponential function e^x
+.RS
+.nf
+exp(0) = 1
+exp(1) = e = 2.718...
+exp(ln(5)) = 5
+.fi
+.RE
+.TP
+.B exp2(x)
+Base-2 exponential: 2^x
+.RS
+.nf
+exp2(0) = 1
+exp2(10) = 1024
+.fi
+.RE
+.TP
+.B expm1(x)
+exp(x)-1, accurate for small x
+.RS
+.nf
+expm1(0) = 0
+expm1(1) = e-1
+.fi
+.RE
+.TP
+.B ln(x)
+Natural logarithm (base e)
+.RS
+.nf
+ln(1) = 0
+ln(e) = 1
+ln(exp(5)) = 5
+.fi
+.RE
+.TP
+.B log(x)
+Natural logarithm (alias for ln)
+.RS
+.nf
+log(1) = 0
+log(e) = 1
+.fi
+.RE
+.TP
+.B log10(x)
+Base-10 logarithm
+.RS
+.nf
+log10(1) = 0
+log10(10) = 1
+log10(1000) = 3
+.fi
+.RE
+.TP
+.B log1p(x)
+log(1+x), accurate for small x
+.RS
+.nf
+log1p(0) = 0
+log1p(1) = ln(2)
+.fi
+.RE
+.TP
+.B log2(x)
+Base-2 logarithm
+.RS
+.nf
+log2(1) = 0
+log2(8) = 3
+log2(1024) = 10
+.fi
+.RE
+.TP
+.B nthroot(x, n)
+n-th root of x
+.RS
+.nf
+nthroot(16, 4) = 2
+nthroot(32, 5) = 2
+.fi
+.RE
+.TP
+.B x^y or pow(x,y)
+x raised to power y
+.RS
+.nf
+2^10 = 1024
+3^4 = 81
+(-1)^0.5 = i
+.fi
+.RE
+.TP
+.B reallog(x)
+Real-valued logarithm (error for x<=0)
+.RS
+.nf
+reallog(e) = 1
+reallog(10) = 2.303
+.fi
+.RE
+.TP
+.B realpow(x, y)
+Real-valued power
+.RS
+.nf
+realpow(2, 3) = 8
+.fi
+.RE
+.TP
+.B realsqrt(x)
+Real-valued sqrt (error for x<0)
+.RS
+.nf
+realsqrt(4) = 2
+realsqrt(2) = 1.414
+.fi
+.RE
+.TP
+.B sqrt(x)
+Square root
+.RS
+.nf
+sqrt(4) = 2
+sqrt(2) = 1.414...
+sqrt(-1) = i
+.fi
+.RE
+
+.SS Linear Algebra
+.TP
+.B chol(A) or [L] = chol(A)
+Cholesky decomposition (A = L*L')
+.RS
+.nf
+chol([4,2;2,5])
+For positive definite matrices
+.fi
+.RE
+.TP
+.B cond(A)
+Condition number
+.RS
+.nf
+cond([1,2;3,4])
+.fi
+.RE
+.TP
+.B det(A)
+Matrix determinant
+.RS
+.nf
+det([1,2;3,4]) = -2
+det(eye(3)) = 1
+.fi
+.RE
+.TP
+.B eig(A) or [V,D] = eig(A)
+Eigenvalues/eigenvectors
+.RS
+.nf
+[V,D] = eig([1,2;2,1])
+A*V = V*D, D=diag of eigenvalues
+.fi
+.RE
+.TP
+.B inv(A)
+Matrix inverse
+.RS
+.nf
+inv([1,2;3,4])
+A * inv(A) = eye
+.fi
+.RE
+.TP
+.B linsolve(A, b)
+Solve Ax = b
+.RS
+.nf
+linsolve([1,2;3,4], [5;6])
+.fi
+.RE
+.TP
+.B [L,U] = lu(A) or [L,U,P] = lu(A)
+LU factorization
+.RS
+.nf
+[L,U] = lu([1,2;3,4])
+L*U = P*A
+.fi
+.RE
+.TP
+.B A \\\\ b or mldivide(A, b)
+Matrix left division
+.RS
+.nf
+[1,2;3,4] \\\\ [5;6]
+.fi
+.RE
+.TP
+.B norm(v) or norm(A)
+Vector/matrix norm
+.RS
+.nf
+norm([3,4]) = 5
+norm([1,2;3,4])
+.fi
+.RE
+.TP
+.B null(A)
+Null space basis vectors
+.RS
+.nf
+null([1,2,3;2,4,6])
+Returns basis for Ax=0
+.fi
+.RE
+.TP
+.B [Q,R] = qr(A)
+QR factorization (A = Q*R)
+.RS
+.nf
+[Q,R] = qr([1,2;3,4])
+Q*R = A
+.fi
+.RE
+.TP
+.B rank(A)
+Matrix rank
+.RS
+.nf
+rank([1,2;3,4]) = 2
+rank([1,2;2,4]) = 1
+.fi
+.RE
+.TP
+.B [Q,T] = schur(A)
+Schur decomposition (A = Q*T*Q')
+.RS
+.nf
+[Q,T] = schur([1,2;3,4])
+T upper triangular
+.fi
+.RE
+.TP
+.B [U,S,V] = svd(A)
+Singular value decomposition (A = U*S*V')
+.RS
+.nf
+[U,S,V] = svd([1,2;3,4])
+U*S*V' = A
+.fi
+.RE
+.TP
+.B trace(A)
+Sum of diagonal elements
+.RS
+.nf
+trace([1,2;3,4]) = 5
+trace(eye(n)) = n
+.fi
+.RE
+.TP
+.B trans(A) or A'
+Matrix transpose
+.RS
+.nf
+trans([1,2;3,4]) = [1,3;2,4]
+[1,2,3]' = column
+.fi
+.RE
+
+.SS Logical
+.TP
+.B all(v)
+True if all elements are nonzero
+.RS
+.nf
+all([1,1,1]) = true
+all([1,0,1]) = false
+.fi
+.RE
+.TP
+.B any(v)
+True if any element is nonzero
+.RS
+.nf
+any([0,0,1]) = true
+any([0,0,0]) = false
+.fi
+.RE
+.TP
+.B eq(a, b)
+Element-wise equality
+.RS
+.nf
+eq(5, 5) = 1
+5 == 5 = true
+.fi
+.RE
+.TP
+.B ge(a, b)
+Greater than or equal
+.RS
+.nf
+ge(5, 5) = 1
+5 >= 5 = true
+.fi
+.RE
+.TP
+.B gt(a, b)
+Greater than
+.RS
+.nf
+gt(6, 5) = 1
+6 > 5 = true
+.fi
+.RE
+.TP
+.B isfinite(x)
+Test if finite
+.RS
+.nf
+isfinite(1) = true
+isfinite(Inf) = false
+.fi
+.RE
+.TP
+.B isinf(x)
+Test if infinite
+.RS
+.nf
+isinf(Inf) = true
+isinf(1) = false
+.fi
+.RE
+.TP
+.B isnan(x)
+Test if NaN
+.RS
+.nf
+isnan(NaN) = true
+isnan(1) = false
+.fi
+.RE
+.TP
+.B isreal(x)
+Test if real (no imaginary part)
+.RS
+.nf
+isreal(5) = true
+isreal(5+3i) = false
+.fi
+.RE
+.TP
+.B le(a, b)
+Less than or equal
+.RS
+.nf
+le(5, 5) = 1
+5 <= 5 = true
+.fi
+.RE
+.TP
+.B lt(a, b)
+Less than
+.RS
+.nf
+lt(5, 6) = 1
+5 < 6 = true
+.fi
+.RE
+.TP
+.B ne(a, b)
+Element-wise not-equal
+.RS
+.nf
+ne(5, 6) = 1
+5 ~= 6 = true
+.fi
+.RE
+
+.SS Matrix
+.TP
+.B blkdiag(A, B, ...)
+Block diagonal matrix
+.RS
+.nf
+blkdiag([1,2;3,4], [5,6;7,8])
+.fi
+.RE
+.TP
+.B cat(dim, A, B)
+Concatenate along dimension
+.RS
+.nf
+cat(1, [1,2], [3,4])
+.fi
+.RE
+.TP
+.B circshift(v, k)
+Circular shift by k positions
+.RS
+.nf
+circshift([1,2,3,4], 1) = [4,1,2,3]
+.fi
+.RE
+.TP
+.B compan(p)
+Companion matrix of polynomial
+.RS
+.nf
+compan([1,-6,11,-6])
+.fi
+.RE
+.TP
+.B diag(v) or diag(A)
+Create diagonal or extract diagonal
+.RS
+.nf
+diag([1,2,3]) = 3x3 diagonal
+diag(A) = diagonal of A
+.fi
+.RE
+.TP
+.B eye(n) or eye(m,n)
+Identity matrix
+.RS
+.nf
+eye(3) = 3x3 identity
+.fi
+.RE
+.TP
+.B flip(v)
+Flip vector/matrix
+.RS
+.nf
+flip([1,2,3]) = [3,2,1]
+.fi
+.RE
+.TP
+.B fliplr(A)
+Flip matrix left-right
+.RS
+.nf
+fliplr([1,2,3]) = [3,2,1]
+.fi
+.RE
+.TP
+.B flipud(A)
+Flip matrix up-down
+.RS
+.nf
+flipud([1;2;3]) = [3;2;1]
+.fi
+.RE
+.TP
+.B hankel(v)
+Hankel matrix
+.RS
+.nf
+hankel([1,2,3])
+.fi
+.RE
+.TP
+.B hilb(n)
+n x n Hilbert matrix
+.RS
+.nf
+hilb(3) = ill-conditioned matrix
+.fi
+.RE
+.TP
+.B horzcat(A, B) or [A, B]
+Horizontal concatenation
+.RS
+.nf
+horzcat([1;2], [3;4])
+.fi
+.RE
+.TP
+.B linspace(a, b, n)
+n linearly spaced points from a to b
+.RS
+.nf
+linspace(0, 10, 5) = [0,2.5,5,7.5,10]
+.fi
+.RE
+.TP
+.B logspace(a, b, n)
+n log-spaced points: 10^a to 10^b
+.RS
+.nf
+logspace(0, 2, 3) = [1, 10, 100]
+.fi
+.RE
+.TP
+.B magic(n)
+n x n magic square
+.RS
+.nf
+magic(3) = 3x3 magic square
+.fi
+.RE
+.TP
+.B ones(n) or ones(m,n)
+Matrix of ones
+.RS
+.nf
+ones(3) = 3x3 ones
+ones(2,3) = 2x3 ones
+.fi
+.RE
+.TP
+.B pascal(n)
+n x n Pascal matrix
+.RS
+.nf
+pascal(4)
+.fi
+.RE
+.TP
+.B repmat(A, m, n)
+Tile A into m x n copies
+.RS
+.nf
+repmat([1,2], 2, 3)
+.fi
+.RE
+.TP
+.B reshape(A, m, n)
+Reshape matrix to m x n
+.RS
+.nf
+reshape([1:6], 2, 3)
+.fi
+.RE
+.TP
+.B rot90(A) or rot90(A, k)
+Rotate matrix 90 degrees k times
+.RS
+.nf
+rot90([1,2;3,4])
+.fi
+.RE
+.TP
+.B sort(v)
+Sort elements ascending
+.RS
+.nf
+sort([3,1,4,1,5]) = [1,1,3,4,5]
+.fi
+.RE
+.TP
+.B sortrows(A)
+Sort rows of matrix
+.RS
+.nf
+sortrows([3,1;1,4;2,2])
+.fi
+.RE
+.TP
+.B toeplitz(v)
+Symmetric Toeplitz matrix
+.RS
+.nf
+toeplitz([1,2,3])
+.fi
+.RE
+.TP
+.B tril(A)
+Lower triangular part
+.RS
+.nf
+tril([1,2;3,4]) = [1,0;3,4]
+.fi
+.RE
+.TP
+.B triu(A)
+Upper triangular part
+.RS
+.nf
+triu([1,2;3,4]) = [1,2;0,4]
+.fi
+.RE
+.TP
+.B unique(v)
+Unique elements sorted
+.RS
+.nf
+unique([1,2,2,3,3,3]) = [1,2,3]
+.fi
+.RE
+.TP
+.B vander(v)
+Vandermonde matrix
+.RS
+.nf
+vander([1,2,3])
+.fi
+.RE
+.TP
+.B vertcat(A, B) or [A; B]
+Vertical concatenation
+.RS
+.nf
+vertcat([1,2], [3,4])
+.fi
+.RE
+.TP
+.B zeros(n) or zeros(m,n)
+Matrix of zeros
+.RS
+.nf
+zeros(3) = 3x3 zeros
+zeros(2,3) = 2x3 zeros
+.fi
+.RE
+
+.SS Matrix Query
+.TP
+.B cols(A)
+Number of columns
+.RS
+.nf
+cols([1,2,3;4,5,6]) = 3
+.fi
+.RE
+.TP
+.B iscolumn(A)
+Test if column vector
+.RS
+.nf
+iscolumn([1;2;3]) = true
+.fi
+.RE
+.TP
+.B isempty(A)
+Test if empty
+.RS
+.nf
+isempty([]) = true
+isempty([1]) = false
+.fi
+.RE
+.TP
+.B ismatrix(A)
+Test if 2D matrix
+.RS
+.nf
+ismatrix([1,2;3,4]) = true
+.fi
+.RE
+.TP
+.B isrow(A)
+Test if row vector
+.RS
+.nf
+isrow([1,2,3]) = true
+.fi
+.RE
+.TP
+.B isscalar(x)
+Test if scalar (1x1)
+.RS
+.nf
+isscalar(5) = true
+isscalar([1,2]) = false
+.fi
+.RE
+.TP
+.B issorted(v)
+Test if sorted ascending
+.RS
+.nf
+issorted([1,2,3]) = true
+.fi
+.RE
+.TP
+.B issquare(A)
+Test if square matrix
+.RS
+.nf
+issquare([1,2;3,4]) = true
+.fi
+.RE
+.TP
+.B issymmetric(A)
+Test if symmetric
+.RS
+.nf
+issymmetric([1,2;2,1]) = true
+.fi
+.RE
+.TP
+.B isvector(A)
+Test if row or column vector
+.RS
+.nf
+isvector([1,2,3]) = true
+.fi
+.RE
+.TP
+.B length(v)
+Length of vector
+.RS
+.nf
+length([1,2,3,4,5]) = 5
+.fi
+.RE
+.TP
+.B ndims(A)
+Number of dimensions
+.RS
+.nf
+ndims([1,2,3;4,5,6]) = 2
+.fi
+.RE
+.TP
+.B numel(A)
+Number of elements
+.RS
+.nf
+numel([1,2,3;4,5,6]) = 6
+.fi
+.RE
+.TP
+.B rows(A)
+Number of rows
+.RS
+.nf
+rows([1,2,3;4,5,6]) = 2
+.fi
+.RE
+.TP
+.B size(A)
+Dimensions [rows, cols]
+.RS
+.nf
+size([1,2,3;4,5,6]) = [2, 3]
+.fi
+.RE
+
+.SS Number Theory
+.TP
+.B catalan(n)
+n-th Catalan number
+.RS
+.nf
+catalan(0) = 1
+catalan(5) = 42
+catalan(10) = 16796
+.fi
+.RE
+.TP
+.B divisors(n)
+List all divisors of n
+.RS
+.nf
+divisors(12) = [1,2,3,4,6,12]
+.fi
+.RE
 .TP
 .B even(n)
-Returns true if n is even, false otherwise
+Test if n is even
+.RS
+.nf
+even(4) = true
+even(5) = false
+.fi
+.RE
 .TP
-.B odd(n)
-Returns true if n is odd, false otherwise
+.B fact(n) or factorial(n)
+Factorial n!
+.RS
+.nf
+fact(5) = 120
+fact(0) = 1
+fact(10) = 3628800
+.fi
+.RE
 .TP
-.B isprime(n)
-Primality test (returns true if prime, false if not). Uses Miller-Rabin algorithm.
+.B factorial(n)
+Factorial n! (alias for fact)
+.RS
+.nf
+factorial(5) = 120
+.fi
+.RE
+.TP
+.B factorial2(n)
+Double factorial n!!
+.RS
+.nf
+factorial2(10) = 3840
+factorial2(9) = 945
+.fi
+.RE
+.TP
+.B fibonacci(n)
+n-th Fibonacci number
+.RS
+.nf
+fibonacci(0) = 0
+fibonacci(10) = 55
+fibonacci(20) = 6765
+.fi
+.RE
+.TP
+.B gamma(x)
+Gamma function: (x-1)! for integers
+.RS
+.nf
+gamma(5) = 24
+gamma(0.5) = sqrt(pi)
+.fi
+.RE
 .TP
 .B gcd(a, b)
 Greatest common divisor
+.RS
+.nf
+gcd(12, 18) = 6
+gcd(48, 18) = 6
+.fi
+.RE
+.TP
+.B isprime(n)
+Test if n is prime
+.RS
+.nf
+isprime(7) = true
+isprime(8) = false
+isprime(2) = true
+.fi
+.RE
 .TP
 .B lcm(a, b)
 Least common multiple
-.SS Special Functions
-.TP
-.B gamma(x) \fRor\fB tgamma(x)
-Gamma function \[*G](x). Extends factorial to real numbers: \[*G](n) = (n-1)! for positive integers.
+.RS
+.nf
+lcm(4, 6) = 12
+lcm(12, 18) = 36
+.fi
+.RE
 .TP
 .B lgamma(x)
-Log-gamma: ln(|\[*G](x)|). More stable for large arguments.
+Log-gamma function: ln(gamma(x))
+.RS
+.nf
+lgamma(5) = ln(24)
+lgamma(10) = 12.802
+.fi
+.RE
 .TP
-.B beta(a, b)
-Beta function: B(a,b) = \[*G](a)\[*G](b)/\[*G](a+b)
+.B lucas(n)
+n-th Lucas number
+.RS
+.nf
+lucas(0) = 2
+lucas(1) = 1
+lucas(10) = 123
+.fi
+.RE
 .TP
-.B erf(x)
-Error function: (2/\[sr]\[*p]) \[is]\d0\ux e^(-t\[S2]) dt
+.B mobius(n)
+Mobius function mu(n)
+.RS
+.nf
+mobius(1) = 1
+mobius(6) = 1
+mobius(4) = 0
+.fi
+.RE
 .TP
-.B erfc(x)
-Complementary error function: 1 - erf(x). More accurate for large x.
-.SS Statistical Distributions
+.B ncr(n, r)
+Binomial coefficient C(n,r) = n!/(r!(n-r)!)
+.RS
+.nf
+ncr(5, 2) = 10
+ncr(10, 3) = 120
+.fi
+.RE
 .TP
-.B normcdf(x)
-Standard normal CDF: \[*F](x) = P(Z \[<=] x) where Z ~ N(0,1)
+.B npr(n, r)
+Permutations P(n,r) = n!/(n-r)!
+.RS
+.nf
+npr(5, 2) = 20
+npr(10, 3) = 720
+.fi
+.RE
 .TP
-.B norminv(p)
-Inverse normal CDF (probit): returns x where \[*F](x) = p
+.B odd(n)
+Test if n is odd
+.RS
+.nf
+odd(5) = true
+odd(4) = false
+.fi
+.RE
 .TP
-.B tcdf(t, df)
-Student's t-distribution CDF with df degrees of freedom
+.B totient(n)
+Euler's totient function phi(n)
+.RS
+.nf
+totient(10) = 4
+totient(12) = 4
+.fi
+.RE
+
+.SS Polynomial
 .TP
-.B tinv(p, df)
-Inverse Student's t CDF
+.B polyder(p)
+Polynomial derivative
+.RS
+.nf
+polyder([1,2,3]) = [2,2]
+.fi
+.RE
+.TP
+.B polyint(p)
+Polynomial integral
+.RS
+.nf
+polyint([2,2]) = [1,2,0]
+.fi
+.RE
+.TP
+.B polyval(p, x)
+Evaluate polynomial p at x
+.RS
+.nf
+polyval([1,2,3], 2) = 11
+p = [1,2,3] means x^2+2x+3
+.fi
+.RE
+
+.SS Probability
 .TP
 .B chi2cdf(x, df)
-Chi-squared distribution CDF
+Chi-squared cumulative distribution
+.RS
+.nf
+chi2cdf(0, 5) = 0
+chi2cdf(11.07, 5) = 0.95
+.fi
+.RE
 .TP
-.B chi2inv(p, df)
-Inverse chi-squared CDF
+.B normcdf(x) or normcdf(x,mu,sigma)
+Normal CDF
+.RS
+.nf
+normcdf(0) = 0.5
+normcdf(1.96) = 0.975
+.fi
+.RE
 .TP
-.B fcdf(x, df1, df2)
-F-distribution CDF
+.B norminv(p)
+Inverse normal CDF (quantile)
+.RS
+.nf
+norminv(0.5) = 0
+norminv(0.975) = 1.96
+.fi
+.RE
 .TP
-.B binompdf(k, n, p)
-Binomial probability mass function: P(X = k) for X ~ Binomial(n, p)
+.B normpdf(x) or normpdf(x,mu,sigma)
+Normal PDF
+.RS
+.nf
+normpdf(0) = 0.399
+normpdf(0, 0, 1) = 0.399
+.fi
+.RE
 .TP
-.B binomcdf(k, n, p)
-Binomial CDF: P(X \[<=] k)
+.B rand or rand(n) or rand(m,n)
+Uniform random [0,1)
+.RS
+.nf
+rand = random scalar
+rand(3) = 3x3 random matrix
+.fi
+.RE
 .TP
-.B poisspdf(k, lambda)
-Poisson probability mass function: P(X = k) for X ~ Poisson(\[*l])
+.B randi(max) or randi(max,n)
+Random integer [1,max]
+.RS
+.nf
+randi(6) = dice roll
+randi(10, 3) = 3x3 ints
+.fi
+.RE
 .TP
-.B poisscdf(k, lambda)
-Poisson CDF: P(X \[<=] k)
-.SS Bessel Functions
+.B randn or randn(n) or randn(m,n)
+Standard normal random
+.RS
+.nf
+randn = random scalar N(0,1)
+randn(3) = 3x3 random matrix
+.fi
+.RE
 .TP
-.B j0(x), j1(x)
-Bessel functions of the first kind, orders 0 and 1
+.B randperm(n)
+Random permutation of 1:n
+.RS
+.nf
+randperm(5) = shuffled [1,2,3,4,5]
+.fi
+.RE
 .TP
-.B y0(x), y1(x)
-Bessel functions of the second kind (Neumann functions), orders 0 and 1
+.B tcdf(t, df)
+Student's t cumulative distribution
+.RS
+.nf
+tcdf(0, 10) = 0.5
+tcdf(1.812, 10) = 0.95
+.fi
+.RE
+
+.SS Rounding
 .TP
-.B i0(x), i1(x)
-Modified Bessel functions of the first kind, orders 0 and 1
+.B ceil(x)
+Round toward positive infinity
+.RS
+.nf
+ceil(3.2) = 4
+ceil(-3.2) = -3
+.fi
+.RE
 .TP
-.B k0(x), k1(x)
-Modified Bessel functions of the second kind, orders 0 and 1
-.SS Elliptic Integrals
+.B fix(x)
+Round toward zero (alias for trunc)
+.RS
+.nf
+fix(3.7) = 3
+fix(-3.7) = -3
+.fi
+.RE
 .TP
-.B ellipk(m)
-Complete elliptic integral of the first kind K(m), computed using AGM method
+.B floor(x)
+Round toward negative infinity
+.RS
+.nf
+floor(3.7) = 3
+floor(-3.7) = -4
+.fi
+.RE
 .TP
-.B ellipe(m)
-Complete elliptic integral of the second kind E(m)
-.SS Other Special Functions
+.B frac(x)
+Fractional part: x - trunc(x)
+.RS
+.nf
+frac(3.7) = 0.7
+frac(-3.7) = -0.7
+.fi
+.RE
 .TP
-.B lambertw(x)
-Lambert W function: solves W(x)\[md]e^(W(x)) = x (principal branch W\d0\u)
+.B mod(x, y)
+Modulo (floored division remainder)
+.RS
+.nf
+mod(17, 5) = 2
+mod(-17, 5) = 3
+.fi
+.RE
+.TP
+.B rem(x, y)
+Remainder (truncated division)
+.RS
+.nf
+rem(17, 5) = 2
+rem(-17, 5) = -2
+.fi
+.RE
+.TP
+.B round(x)
+Round to nearest integer
+.RS
+.nf
+round(3.5) = 4
+round(3.4) = 3
+round(-3.5) = -4
+.fi
+.RE
+.TP
+.B sign(x)
+Sign function: -1, 0, or 1
+.RS
+.nf
+sign(5) = 1
+sign(-5) = -1
+sign(0) = 0
+.fi
+.RE
+.TP
+.B signum(x)
+Sign function (alias for sign)
+.RS
+.nf
+signum(5) = 1
+.fi
+.RE
+.TP
+.B trunc(x)
+Round toward zero
+.RS
+.nf
+trunc(3.7) = 3
+trunc(-3.7) = -3
+.fi
+.RE
+
+.SS Set
+.TP
+.B intersect(A, B)
+Set intersection
+.RS
+.nf
+intersect([1,2,3], [2,3,4]) = [2,3]
+.fi
+.RE
+.TP
+.B setdiff(A, B)
+Set difference: A - B
+.RS
+.nf
+setdiff([1,2,3], [2,3,4]) = [1]
+.fi
+.RE
+.TP
+.B setxor(A, B)
+Symmetric difference
+.RS
+.nf
+setxor([1,2,3], [2,3,4]) = [1,4]
+.fi
+.RE
+.TP
+.B union(A, B)
+Set union
+.RS
+.nf
+union([1,2,3], [2,3,4]) = [1,2,3,4]
+.fi
+.RE
+
+.SS Signal
+.TP
+.B conv(u, v)
+Convolution of vectors
+.RS
+.nf
+conv([1,2,3], [1,1]) = [1,3,5,3]
+.fi
+.RE
+.TP
+.B corrcoef(x, y)
+Correlation coefficient
+.RS
+.nf
+corrcoef([1,2,3], [2,4,6]) = 1
+.fi
+.RE
+.TP
+.B cumprod(v)
+Cumulative product
+.RS
+.nf
+cumprod([1,2,3,4,5]) = [1,2,6,24,120]
+.fi
+.RE
+.TP
+.B cumsum(v)
+Cumulative sum
+.RS
+.nf
+cumsum([1,2,3,4,5]) = [1,3,6,10,15]
+.fi
+.RE
+.TP
+.B deconv(u, v)
+Deconvolution
+.RS
+.nf
+deconv([1,3,5,3], [1,1])
+.fi
+.RE
+.TP
+.B diff(v)
+Differences between consecutive elements
+.RS
+.nf
+diff([1,4,9,16]) = [3,5,7]
+.fi
+.RE
+.TP
+.B gradient(v)
+Numerical gradient
+.RS
+.nf
+gradient([1,4,9,16,25])
+.fi
+.RE
+.TP
+.B interp1(x, y, xi)
+Linear interpolation
+.RS
+.nf
+interp1([1,2,3], [1,4,9], 1.5) = 2.5
+.fi
+.RE
+.TP
+.B movmean(v, k)
+Moving average with window k
+.RS
+.nf
+movmean([1,2,3,4,5], 3)
+.fi
+.RE
+.TP
+.B movsum(v, k)
+Moving sum with window k
+.RS
+.nf
+movsum([1,2,3,4,5], 3)
+.fi
+.RE
+.TP
+.B trapz(y) or trapz(x, y)
+Trapezoidal integration
+.RS
+.nf
+trapz([1,2,3,4,5])
+.fi
+.RE
+
+.SS Special
+.TP
+.B besselj(n, x)
+Bessel function of first kind J_n(x)
+.RS
+.nf
+besselj(0, 1) = 0.765
+besselj(1, 1) = 0.440
+.fi
+.RE
+.TP
+.B bessely(n, x)
+Bessel function of second kind Y_n(x)
+.RS
+.nf
+bessely(0, 1) = 0.088
+bessely(1, 1) = -0.781
+.fi
+.RE
+.TP
+.B beta(a, b)
+Beta function: gamma(a)*gamma(b)/gamma(a+b)
+.RS
+.nf
+beta(2, 3) = 0.0833
+beta(1, 1) = 1
+.fi
+.RE
+.TP
+.B digamma(x) or psi(x)
+Digamma function: d/dx ln(Gamma(x))
+.RS
+.nf
+digamma(1) = -0.5772 (Euler-Mascheroni)
+.fi
+.RE
+.TP
+.B erf(x)
+Error function
+.RS
+.nf
+erf(0) = 0
+erf(1) = 0.843
+erf(inf) = 1
+.fi
+.RE
+.TP
+.B erfc(x)
+Complementary error function: 1-erf(x)
+.RS
+.nf
+erfc(0) = 1
+erfc(1) = 0.157
+.fi
+.RE
+.TP
+.B harmonic(n)
+Harmonic number H_n = 1 + 1/2 + ... + 1/n
+.RS
+.nf
+harmonic(1) = 1
+harmonic(10) = 2.9289
+.fi
+.RE
+.TP
+.B heaviside(x)
+Heaviside step function
+.RS
+.nf
+heaviside(1) = 1
+heaviside(-1) = 0
+.fi
+.RE
+.TP
+.B rect(x)
+Rectangle function: 1 if |x|<0.5
+.RS
+.nf
+rect(0) = 1
+rect(0.6) = 0
+.fi
+.RE
+.TP
+.B sigmoid(x)
+Logistic sigmoid: 1/(1+exp(-x))
+.RS
+.nf
+sigmoid(0) = 0.5
+sigmoid(10) = 0.9999...
+.fi
+.RE
+.TP
+.B softplus(x)
+Softplus: ln(1+exp(x))
+.RS
+.nf
+softplus(0) = ln(2)
+softplus(10) = 10
+.fi
+.RE
+.TP
+.B step(x) or heaviside(x)
+Unit step function
+.RS
+.nf
+step(1) = 1
+step(-1) = 0
+step(0) = 0.5
+.fi
+.RE
+.TP
+.B tri(x)
+Triangle function: max(0, 1-|x|)
+.RS
+.nf
+tri(0) = 1
+tri(0.5) = 0.5
+tri(1) = 0
+.fi
+.RE
+.TP
+.B zeta(s)
+Riemann zeta function for s > 1
+.RS
+.nf
+zeta(2) = pi^2/6 = 1.6449
+zeta(4) = pi^4/90
+.fi
+.RE
+
+.SS Statistics
+.TP
+.B geomean(v)
+Geometric mean
+.RS
+.nf
+geomean([1,2,4,8]) = 2.828
+.fi
+.RE
+.TP
+.B harmmean(v)
+Harmonic mean
+.RS
+.nf
+harmmean([1,2,4]) = 1.714
+.fi
+.RE
+.TP
+.B iqr(v)
+Interquartile range: Q3-Q1
+.RS
+.nf
+iqr([1,2,3,4,5,6,7,8,9,10])
+.fi
+.RE
+.TP
+.B kurtosis(v)
+Sample kurtosis
+.RS
+.nf
+kurtosis([1,2,3,4,5])
+.fi
+.RE
+.TP
+.B mad(v)
+Mean absolute deviation
+.RS
+.nf
+mad([1,2,3,4,5]) = 1.2
+.fi
+.RE
+.TP
+.B max(v) or max(a,b,...)
+Maximum value
+.RS
+.nf
+max([3,1,4,1,5]) = 5
+max(3, 7) -> use max([3,7])
+.fi
+.RE
+.TP
+.B mean(v)
+Arithmetic mean
+.RS
+.nf
+mean([1,2,3,4,5]) = 3
+.fi
+.RE
+.TP
+.B meansq(v)
+Mean of squares
+.RS
+.nf
+meansq([1,2,3]) = 4.667
+.fi
+.RE
+.TP
+.B median(v)
+Median value
+.RS
+.nf
+median([1,2,3,4,5]) = 3
+median([1,2,3,4]) = 2.5
+.fi
+.RE
+.TP
+.B min(v) or min(a,b,...)
+Minimum value
+.RS
+.nf
+min([3,1,4,1,5]) = 1
+min(3, 7) -> use min([3,7])
+.fi
+.RE
+.TP
+.B prctile(v, p)
+p-th percentile
+.RS
+.nf
+prctile([1:10], 50) = median
+.fi
+.RE
+.TP
+.B range(v)
+Range: max - min
+.RS
+.nf
+range([1,2,3,4,5]) = 4
+.fi
+.RE
+.TP
+.B rms(v)
+Root mean square
+.RS
+.nf
+rms([3,4]) = 3.536
+.fi
+.RE
+.TP
+.B skewness(v)
+Sample skewness
+.RS
+.nf
+skewness([1,2,3,4,5]) = 0
+.fi
+.RE
+.TP
+.B std(v)
+Sample standard deviation
+.RS
+.nf
+std([1,2,3,4,5]) = 1.581
+.fi
+.RE
+.TP
+.B sum(v)
+Sum of vector elements
+.RS
+.nf
+sum([1,2,3,4,5]) = 15
+.fi
+.RE
+.TP
+.B sumsq(v)
+Sum of squares
+.RS
+.nf
+sumsq([1,2,3]) = 14
+.fi
+.RE
+.TP
+.B var(v)
+Sample variance
+.RS
+.nf
+var([1,2,3,4,5]) = 2.5
+.fi
+.RE
+.TP
+.B zscore(v)
+Standardized z-scores
+.RS
+.nf
+zscore([1,2,3,4,5])
+.fi
+.RE
+
+.SS Text
+.TP
+.B bow(str)
+Bag of words - tokenize string to word counts
+.RS
+.nf
+bow('hello world hello')
+Returns [hello:2, world:1]
+.fi
+.RE
+.TP
+.B tfidf(docs)
+TF-IDF weighting for document matrix
+.RS
+.nf
+D = [bow('cat dog'); bow('dog bird')]; tfidf(D)
+.fi
+.RE
+.TP
+.B wordvec(vocab, str)
+Convert string to word vector using vocabulary
+.RS
+.nf
+v = ['cat','dog','bird']; wordvec(v,'cat dog')
+Returns [1,1,0]
+.fi
+.RE
+
+.SS Trigonometry
+.TP
+.B acos(x)
+Inverse cosine, returns radians. Domain: [-1, 1]
+.RS
+.nf
+acos(1) = 0
+acos(0.5) = pi/3
+acos(0) = pi/2
+.fi
+.RE
+.TP
+.B acosd(x)
+Inverse cosine, returns degrees
+.RS
+.nf
+acosd(1) = 0
+acosd(0.5) = 60
+acosd(0) = 90
+.fi
+.RE
+.TP
+.B acosh(x)
+Inverse hyperbolic cosine. Domain: [1, inf)
+.RS
+.nf
+acosh(1) = 0
+acosh(2) = 1.317
+.fi
+.RE
+.TP
+.B acot(x)
+Inverse cotangent
+.RS
+.nf
+acot(1) = pi/4
+acot(0) = pi/2
+.fi
+.RE
+.TP
+.B acoth(x)
+Inverse hyperbolic cotangent. Domain: |x| > 1
+.RS
+.nf
+acoth(2) = 0.549
+.fi
+.RE
+.TP
+.B acsc(x)
+Inverse cosecant. Domain: |x| >= 1
+.RS
+.nf
+acsc(1) = pi/2
+acsc(2) = pi/6
+.fi
+.RE
+.TP
+.B acsch(x)
+Inverse hyperbolic cosecant
+.RS
+.nf
+acsch(1) = 0.881
+.fi
+.RE
+.TP
+.B asec(x)
+Inverse secant. Domain: |x| >= 1
+.RS
+.nf
+asec(1) = 0
+asec(2) = pi/3
+.fi
+.RE
+.TP
+.B asech(x)
+Inverse hyperbolic secant. Domain: (0, 1]
+.RS
+.nf
+asech(1) = 0
+asech(0.5) = 1.317
+.fi
+.RE
+.TP
+.B asin(x)
+Inverse sine, returns radians. Domain: [-1, 1]
+.RS
+.nf
+asin(0) = 0
+asin(0.5) = pi/6
+asin(1) = pi/2
+.fi
+.RE
+.TP
+.B asind(x)
+Inverse sine, returns degrees
+.RS
+.nf
+asind(0) = 0
+asind(0.5) = 30
+asind(1) = 90
+.fi
+.RE
+.TP
+.B asinh(x)
+Inverse hyperbolic sine
+.RS
+.nf
+asinh(0) = 0
+asinh(1) = 0.881
+.fi
+.RE
+.TP
+.B atan(x)
+Inverse tangent, returns radians
+.RS
+.nf
+atan(0) = 0
+atan(1) = pi/4
+.fi
+.RE
+.TP
+.B atan2(y, x)
+Two-argument arctangent, returns angle in radians
+.RS
+.nf
+atan2(1, 1) = pi/4
+atan2(1, 0) = pi/2
+atan2(-1, -1) = -3*pi/4
+.fi
+.RE
+.TP
+.B atan2d(y, x)
+Two-argument arctangent, returns degrees
+.RS
+.nf
+atan2d(1, 1) = 45
+atan2d(1, 0) = 90
+.fi
+.RE
+.TP
+.B atand(x)
+Inverse tangent, returns degrees
+.RS
+.nf
+atand(0) = 0
+atand(1) = 45
+.fi
+.RE
+.TP
+.B atanh(x)
+Inverse hyperbolic tangent. Domain: (-1, 1)
+.RS
+.nf
+atanh(0) = 0
+atanh(0.5) = 0.549
+.fi
+.RE
+.TP
+.B cos(x)
+Cosine of x (x in radians)
+.RS
+.nf
+cos(0) = 1
+cos(pi/3) = 0.5
+cos(pi) = -1
+.fi
+.RE
+.TP
+.B cosd(x)
+Cosine of x degrees
+.RS
+.nf
+cosd(0) = 1
+cosd(60) = 0.5
+cosd(90) = 0
+.fi
+.RE
+.TP
+.B cosh(x)
+Hyperbolic cosine
+.RS
+.nf
+cosh(0) = 1
+cosh(1) = 1.543
+.fi
+.RE
+.TP
+.B cot(x)
+Cotangent: 1/tan(x)
+.RS
+.nf
+cot(pi/4) = 1
+cot(pi/2) = 0
+.fi
+.RE
+.TP
+.B coth(x)
+Hyperbolic cotangent: 1/tanh(x)
+.RS
+.nf
+coth(1) = 1.313
+.fi
+.RE
+.TP
+.B csc(x)
+Cosecant: 1/sin(x)
+.RS
+.nf
+csc(pi/2) = 1
+csc(pi/6) = 2
+.fi
+.RE
+.TP
+.B csch(x)
+Hyperbolic cosecant: 1/sinh(x)
+.RS
+.nf
+csch(1) = 0.851
+.fi
+.RE
+.TP
+.B sec(x)
+Secant: 1/cos(x)
+.RS
+.nf
+sec(0) = 1
+sec(pi/3) = 2
+.fi
+.RE
+.TP
+.B sech(x)
+Hyperbolic secant: 1/cosh(x)
+.RS
+.nf
+sech(0) = 1
+sech(1) = 0.648
+.fi
+.RE
+.TP
+.B sin(x)
+Sine of x (x in radians)
+.RS
+.nf
+sin(0) = 0
+sin(pi/2) = 1
+sin(pi/6) = 0.5
+.fi
+.RE
+.TP
+.B sinc(x)
+Normalized sinc: sin(pi*x)/(pi*x), sinc(0)=1
+.RS
+.nf
+sinc(0) = 1
+sinc(1) = 0
+sinc(0.5) = 0.637
+.fi
+.RE
+.TP
+.B sind(x)
+Sine of x degrees
+.RS
+.nf
+sind(0) = 0
+sind(30) = 0.5
+sind(90) = 1
+.fi
+.RE
+.TP
+.B sinh(x)
+Hyperbolic sine
+.RS
+.nf
+sinh(0) = 0
+sinh(1) = 1.175
+.fi
+.RE
+.TP
+.B tan(x)
+Tangent of x (x in radians)
+.RS
+.nf
+tan(0) = 0
+tan(pi/4) = 1
+.fi
+.RE
+.TP
+.B tand(x)
+Tangent of x degrees
+.RS
+.nf
+tand(0) = 0
+tand(45) = 1
+.fi
+.RE
+.TP
+.B tanh(x)
+Hyperbolic tangent
+.RS
+.nf
+tanh(0) = 0
+tanh(1) = 0.762
+.fi
+.RE
+
+.SS Utility
+.TP
+.B clamp(x, lo, hi)
+Clamp x to range [lo, hi]
+.RS
+.nf
+clamp(5, 0, 10) = 5
+clamp(-5, 0, 10) = 0
+clamp(15, 0, 10) = 10
+.fi
+.RE
+.TP
+.B eps
+Machine epsilon (smallest x where 1+x > 1)
+.RS
+.nf
+eps = 2.22e-16 (double)
+.fi
+.RE
+.TP
+.B find(v)
+Indices of nonzero elements
+.RS
+.nf
+find([0,1,0,1,0]) = [2,4]
+.fi
+.RE
+.TP
+.B nextpow2(n)
+Exponent of next power of 2
+.RS
+.nf
+nextpow2(5) = 3
+nextpow2(9) = 4
+.fi
+.RE
+.TP
+.B normalize(v)
+Normalize to unit length
+.RS
+.nf
+normalize([3,4]) = [0.6, 0.8]
+.fi
+.RE
+.TP
+.B realmax
+Largest finite floating-point number
+.RS
+.nf
+realmax = 1.79e+308 (double)
+.fi
+.RE
+.TP
+.B realmin
+Smallest positive normalized number
+.RS
+.nf
+realmin = 2.22e-308 (double)
+.fi
+.RE
+.TP
+.B rescale(v)
+Scale to [0, 1]
+.RS
+.nf
+rescale([1,2,3,4,5])
+.fi
+.RE
+
 .SH MATRICES
 Matrices are entered using square brackets with semicolons separating rows:
 .PP
@@ -495,523 +2533,6 @@ Row i
 .TP
 .B A(:, j)
 Column j
-.TP
-.B start:end
-Colon notation creates row vector (e.g., 1:5 = [1 2 3 4 5])
-.TP
-.B start:step:end
-Colon with step (e.g., 1:2:9 = [1 3 5 7 9])
-.SS Array Manipulation Functions
-.TP
-.B linspace(a, b, n)
-n linearly spaced points from a to b (default n=10)
-.TP
-.B logspace(a, b, n)
-n logarithmically spaced points from 10^a to 10^b (default n=50)
-.TP
-.B fliplr(M)
-Flip matrix left-right
-.TP
-.B flipud(M)
-Flip matrix up-down
-.TP
-.B flip(v)
-Flip vector
-.TP
-.B rot90(M)
-Rotate matrix 90° counterclockwise
-.TP
-.B sort(v)
-Sort elements in ascending order
-.TP
-.B unique(v)
-Return sorted unique elements
-.TP
-.B cumsum(v)
-Cumulative sum
-.TP
-.B cumprod(v)
-Cumulative product
-.TP
-.B diff(v)
-Differences between consecutive elements
-.TP
-.B find(v)
-Indices of non-zero elements (1-indexed)
-.TP
-.B reshape(M, r, c)
-Reshape matrix to r rows and c columns
-.TP
-.B repmat(M, r, c)
-Replicate matrix r×c times
-.TP
-.B circshift(v, n)
-Circular shift by n positions
-.TP
-.B randperm(n)
-Random permutation of 1:n
-.SS Reduction Functions
-.TP
-.B sum(M)
-Sum of all elements
-.TP
-.B prod(M)
-Product of all elements
-.TP
-.B mean(M)
-Arithmetic mean
-.TP
-.B std(M) \fRor\fB sd(M)
-Standard deviation
-.TP
-.B var(M)
-Variance
-.TP
-.B median(M)
-Median value
-.TP
-.B any(M)
-True if any element is nonzero
-.TP
-.B all(M)
-True if all elements are nonzero
-.TP
-.B nnz(M)
-Count of nonzero elements
-.SS Predicate Functions
-.TP
-.B isnan(x)
-True if x is NaN
-.TP
-.B isinf(x)
-True if x is Inf or -Inf
-.TP
-.B isfinite(x)
-True if x is neither Inf nor NaN
-.TP
-.B isreal(x)
-True if x has no imaginary part
-.TP
-.B isempty(M)
-True if matrix is empty
-.TP
-.B isscalar(x)
-True if x is a scalar
-.TP
-.B isvector(M)
-True if M is a row or column vector
-.TP
-.B ismatrix(M)
-True if M is a matrix
-.TP
-.B isrow(M)
-True if M is a row vector (1×n)
-.TP
-.B iscolumn(M)
-True if M is a column vector (n×1)
-.TP
-.B issquare(M)
-True if M is a square matrix (n×n)
-.TP
-.B issymmetric(M)
-True if M equals its transpose
-.TP
-.B isdiag(M)
-True if M is diagonal
-.TP
-.B istriu(M)
-True if M is upper triangular
-.TP
-.B istril(M)
-True if M is lower triangular
-.TP
-.B issorted(v)
-True if v is sorted in ascending order
-.TP
-.B isequal(a, b)
-True if a equals b
-.TP
-.B ndims(M)
-Number of dimensions (always 2 for matrices)
-.SS Set Operations
-.TP
-.B union(A, B)
-Set union of unique sorted elements
-.TP
-.B intersect(A, B)
-Set intersection
-.TP
-.B setdiff(A, B)
-Elements in A but not in B
-.TP
-.B setxor(A, B)
-Symmetric difference (elements in A or B but not both)
-.SS Sorting and Selection
-.TP
-.B sort(v)
-Sort elements ascending
-.TP
-.B sortrows(M)
-Sort matrix rows by first column
-.TP
-.B maxk(v, k)
-k largest elements
-.TP
-.B mink(v, k)
-k smallest elements
-.SS Statistical Functions (Additional)
-.TP
-.B range(v)
-Range: max(v) - min(v)
-.TP
-.B iqr(v)
-Interquartile range (Q3 - Q1)
-.TP
-.B prctile(v, p)
-p-th percentile (0-100)
-.TP
-.B cov(v)
-Covariance (variance for vector)
-.TP
-.B zscore(v)
-Z-score normalization: (x - mean) / std
-.SS Real-Only Math Functions
-.TP
-.B nthroot(x, n)
-Real nth root (preserves sign for odd n)
-.TP
-.B realsqrt(x)
-Real square root (error if x < 0)
-.TP
-.B reallog(x)
-Real logarithm (error if x <= 0)
-.TP
-.B realpow(x, y)
-Real power (error if result would be complex)
-.SS Element-wise Comparison Functions
-.TP
-.B eq(A, B)
-Element-wise equal (A == B)
-.TP
-.B ne(A, B)
-Element-wise not equal (A ~= B)
-.TP
-.B lt(A, B)
-Element-wise less than (A < B)
-.TP
-.B le(A, B)
-Element-wise less or equal (A <= B)
-.TP
-.B gt(A, B)
-Element-wise greater than (A > B)
-.TP
-.B ge(A, B)
-Element-wise greater or equal (A >= B)
-.SS Element-wise Operations
-.TP
-.B times(A, B)
-Element-wise multiply (A .* B)
-.TP
-.B rdivide(A, B)
-Element-wise right divide (A ./ B)
-.TP
-.B ldivide(A, B)
-Element-wise left divide (A .\\ B)
-.TP
-.B plus(A, B)
-Element-wise add (A + B)
-.TP
-.B minus(A, B)
-Element-wise subtract (A - B)
-.SS Cumulative Functions
-.TP
-.B cummax(v)
-Cumulative maximum
-.TP
-.B cummin(v)
-Cumulative minimum
-.TP
-.B rescale(v)
-Scale values to [0, 1]
-.SS Signal Processing Functions
-.TP
-.B conv(a, b)
-Convolution of two vectors
-.TP
-.B deconv(u, v)
-Deconvolution (polynomial division)
-.TP
-.B gradient(v)
-Numerical gradient (central differences)
-.TP
-.B trapz(y)
-Trapezoidal integration
-.TP
-.B movmean(v, k)
-Moving average with window size k
-.TP
-.B movsum(v, k)
-Moving sum with window size k
-.TP
-.B corrcoef(X, Y)
-Correlation coefficient between X and Y
-.TP
-.B interp1(x, y, xi)
-Linear interpolation
-.TP
-.B sinc(x)
-Normalized sinc function: sin(πx)/(πx)
-.TP
-.B sigmoid(x)
-Logistic sigmoid: 1/(1+exp(-x))
-.TP
-.B softplus(x)
-Smooth ReLU: ln(1+exp(x))
-.TP
-.B step(x)
-Heaviside step function
-.TP
-.B rect(x)
-Rectangle/boxcar function
-.TP
-.B tri(x)
-Triangle function
-.SS Advanced Statistics
-.TP
-.B geomean(v)
-Geometric mean
-.TP
-.B harmmean(v)
-Harmonic mean
-.TP
-.B skewness(v)
-Sample skewness
-.TP
-.B kurtosis(v)
-Excess kurtosis
-.TP
-.B mad(v)
-Mean absolute deviation
-.SS Precision Functions
-.TP
-.B log1p(x)
-log(1+x), accurate for small x
-.TP
-.B expm1(x)
-exp(x)-1, accurate for small x
-.SS Angle Wrapping
-.TP
-.B wrapToPi(x)
-Wrap angle to [-π, π]
-.TP
-.B wrap360(x)
-Wrap angle to [0, 360)
-.TP
-.B wrap180(x)
-Wrap angle to [-180, 180]
-.SS Special Matrix Functions
-.TP
-.B rank(M)
-Matrix rank (number of linearly independent rows)
-.TP
-.B cond(M)
-Condition number (ratio of largest to smallest singular value)
-.TP
-.B linsolve(A, b)
-Solve linear system Ax = b
-.TP
-.B kron(A, B)
-Kronecker product
-.TP
-.B vander(v, n)
-Vandermonde matrix
-.TP
-.B toeplitz(c)
-Toeplitz matrix
-.TP
-.B magic(n)
-n-by-n magic square
-.TP
-.B pascal(n)
-n-by-n Pascal matrix (binomial coefficients)
-.TP
-.B hilb(n)
-n-by-n Hilbert matrix (H(i,j) = 1/(i+j-1))
-.TP
-.B hankel(c)
-Hankel matrix
-.TP
-.B blkdiag(A, B)
-Block diagonal matrix
-.TP
-.B compan(p)
-Companion matrix for polynomial
-.SS Index Functions
-.TP
-.B sub2ind([m n], r, c)
-Convert row,col subscripts to linear index
-.TP
-.B ind2sub([m n], idx)
-Convert linear index to row,col subscripts
-.SS Utility Functions
-.TP
-.B clamp(x, lo, hi)
-Limit x to range [lo, hi]
-.TP
-.B isapprox(a, b)
-Approximate equality (tolerance 1e-10)
-.TP
-.B isapprox(a, b, tol)
-Approximate equality with custom tolerance
-.TP
-.B colon(a, b)
-Explicit colon operator, returns a:b
-.TP
-.B colon(a, d, b)
-Explicit colon with step, returns a:d:b
-.TP
-.B cat(dim, A, B)
-Concatenate arrays along dimension
-.SS Coordinate Conversions
-.TP
-.B cart2pol(x, y)
-Cartesian to polar, returns [theta, r]
-.TP
-.B pol2cart(theta, r)
-Polar to Cartesian, returns [x, y]
-.SS Array Manipulation
-.TP
-.B fliplr(M)
-Flip matrix left-right (reverse columns)
-.TP
-.B flipud(M)
-Flip matrix up-down (reverse rows)
-.TP
-.B circshift(v, k)
-Circular shift vector by k positions
-.TP
-.B diff(v)
-Differences between adjacent elements (discrete derivative)
-.SS HP/TI Calculator Functions
-.TP
-.B frac(x)
-Fractional part of x
-.TP
-.B dms(d, m, s)
-Convert degrees/minutes/seconds to decimal degrees
-.TP
-.B hms(h, m, s)
-Convert hours/minutes/seconds to decimal hours
-.TP
-.B deg2dms(d)
-Convert decimal degrees to [d, m, s]
-.TP
-.B hr2hms(h)
-Convert decimal hours to [h, m, s]
-.TP
-.B percent(x, p)
-Calculate p percent of x
-.TP
-.B pctchange(old, new)
-Percent change from old to new value
-.SS Utility Functions
-.TP
-.B lerp(a, b, t)
-Linear interpolation: a + t*(b-a)
-.TP
-.B wrap(x, lo, hi)
-Wrap value to range [lo, hi)
-.TP
-.B clip(x, lo, hi)
-Clamp value to range [lo, hi]
-.TP
-.B remap(x, a1, b1, a2, b2)
-Map x from [a1,b1] to [a2,b2]
-.TP
-.B dist(x1, y1, x2, y2)
-Euclidean distance between two points
-.TP
-.B manhattan(x1, y1, x2, y2)
-Manhattan distance between two points
-.TP
-.B midpoint(x1, y1, x2, y2)
-Midpoint between two points, returns [x, y]
-.SS Number Theory Functions
-.TP
-.B totient(n)
-Euler's totient function phi(n)
-.TP
-.B divisors(n)
-All divisors of n as a row vector
-.TP
-.B mobius(n)
-Mobius function mu(n)
-.TP
-.B fibonacci(n)
-nth Fibonacci number (F(0)=0, F(1)=1)
-.TP
-.B lucas(n)
-nth Lucas number (L(0)=2, L(1)=1)
-.TP
-.B catalan(n)
-nth Catalan number C(n) = (2n)!/((n+1)!*n!)
-.TP
-.B factorial2(n)
-Double factorial n!! = n*(n-2)*(n-4)*...
-.SS Statistical Distribution Functions
-.TP
-.B normpdf(x)
-Standard normal probability density
-.TP
-.B normpdf(x, mu, sigma)
-Normal probability density with parameters
-.TP
-.B normcdf(x)
-Standard normal cumulative distribution
-.TP
-.B normcdf(x, mu, sigma)
-Normal cumulative distribution with parameters
-.TP
-.B norminv(p)
-Inverse standard normal CDF (quantile function, probit)
-.SS Extended Trigonometric Functions
-.TP
-.B sinpi(x)
-sin(pi*x), exact at integer values
-.TP
-.B cospi(x)
-cos(pi*x), exact at half-integer values
-.SS Logical Functions
-.TP
-.B nand(a, b)
-Logical NOT AND
-.TP
-.B nor(a, b)
-Logical NOT OR
-.TP
-.B implies(a, b)
-Logical implication (not a or b)
-.SS Equation Solving Functions
-.TP
-.B quadratic(a, b, c)
-Solve ax^2+bx+c=0, returns [x1, x2]
-.SS Mathematical Constants
-.TP
-.B golden()
-Golden ratio phi = (1+sqrt(5))/2 ≈ 1.618
-.TP
-.B silver()
-Silver ratio = 1+sqrt(2) ≈ 2.414
-.SS Polynomial Functions
-.TP
-.B polyval(p, x)
-Evaluate polynomial p at x (coefficients highest to lowest degree)
-.TP
-.B polyder(p)
-Derivative coefficients of polynomial p
-.TP
-.B polyint(p)
-Integral coefficients of polynomial p (constant = 0)
 .SH STATISTICS
 .SS Data Entry
 .TP
@@ -1288,27 +2809,24 @@ Clear the stack
 .B stack
 Show entire stack
 .SH PLOTTING
-ASCII plots for quick visualization. Plot any expression with a specified variable:
-.TP
-.B plot \fIexpr\fB \fIvar\fB=\fImin\fB:\fImax\fR
-Plot expression over range, using any variable name
-.TP
-.B plot \fIexpr\fB \fImin\fB:\fImax\fR
-Plot expression over range (assumes variable x)
+ASCII plots for quick visualization. You can plot any expression containing x:
 .TP
 .B plot \fIexpr\fR
-Plot expression from -10 to 10 (assumes variable x)
+Plot expression from -10 to 10
+.TP
+.B plot \fIexpr\fB \fIa\fB:\fIb\fR
+Plot expression over range [a, b]
 .PP
 Examples:
 .PP
 .RS
 .nf
->>> plot sin(x) x=-3.14:3.14
->>> plot sin(t)+cos(t) t=-3:3
->>> plot x^2 x=-5:5
->>> plot isprime(n) n=0:100
+>>> plot sin(x)
+>>> plot x^2 -5:5
+>>> plot x^2+x -1:1
+>>> plot isprime(x) 0:100
 >>> f(x)=sin(x)/x
->>> plot f(y) y=-10:10
+>>> plot f(x)
 .fi
 .RE
 .SH PIPE MODE

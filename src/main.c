@@ -6,7 +6,7 @@
 
 /* Forward declaration for evaluating a single expression
  * Returns: 0 for success/true, 1 for boolean false */
-static int eval_expr_line(const char *line, int quiet);
+int eval_expr_line(const char *line, int quiet);
 
 /* Check if input is from a pipe/redirect (non-interactive) */
 static int is_pipe_input(void)
@@ -27,12 +27,8 @@ int main(int argc, char *argv[])
     int interactive;
     int last_bool_result = 1;  /* Track last boolean result for exit code (1=true, 0=false) */
 
-    apfx_init();         /* Initialize apfx static variables (required for DOS) */
     init_user_funcs();
     init_variables();
-#ifdef HAVE_NAMED_VARS
-    init_named_vars();
-#endif
     
     /* Initialize last_ans */
     last_ans.type = VAL_SCALAR;
@@ -63,8 +59,7 @@ int main(int argc, char *argv[])
     /* Interactive mode (or pipe mode with same logic, just no banner/prompts) */
     if (interactive) {
         dos_init_screen();
-        printf("sc - Scientific Calculator (%d-bit, %d decimal digits).  Type 'help' or 'vars'.\n",
-               AP_BITS, INTERNAL_DIGITS);
+        printf("sc - Scientific Calculator.  Type 'help' for commands, 'vars' to list variables.\n");
     }
 
     for (;;) {
@@ -84,57 +79,21 @@ int main(int argc, char *argv[])
         if (str_eq(input, "quit") || str_eq(input, "exit")) break;
         if (str_eq(input, "help")) { print_help(); continue; }
         if (str_starts(input, "help ")) {
-            show_function_help(input + 5);
+            const char *fn = input + 5;
+            while (*fn == ' ') fn++;
+            if (*fn) show_function_help(fn);
+            else print_help();
             continue;
         }
         if (str_starts(input, "demo ")) {
-            show_function_demo(input + 5);
+            const char *fn = input + 5;
+            while (*fn == ' ') fn++;
+            if (*fn) show_function_demo(fn);
             continue;
         }
-        if (str_eq(input, "constants") || str_eq(input, "const")) { print_constants(); continue; }
-        if (str_eq(input, "features")) { print_features(); continue; }
-        if (str_eq(input, "commands")) { print_commands(); continue; }
-        if (str_eq(input, "demo")) { run_demo(); continue; }
         if (str_eq(input, "test")) { run_tests(); continue; }
         if (str_eq(input, "bench")) { run_bench(); continue; }
         if (str_starts(input, "mode")) { handle_mode(input); continue; }
-        
-        /* MATLAB-compatible format commands */
-        if (str_eq(input, "format short")) {
-            current_mode = MODE_FIX;
-            display_fixed_places = 4;
-            continue;
-        }
-        if (str_eq(input, "format long")) {
-            current_mode = MODE_DECIMAL;
-            display_digits = 16;
-            continue;
-        }
-        if (str_eq(input, "format bank")) {
-            current_mode = MODE_FIX;
-            display_fixed_places = 2;
-            continue;
-        }
-        if (str_eq(input, "format short e")) {
-            current_mode = MODE_SCI;
-            display_fixed_places = 4;
-            continue;
-        }
-        if (str_eq(input, "format long e")) {
-            current_mode = MODE_SCI;
-            display_fixed_places = 16;
-            continue;
-        }
-        if (str_eq(input, "format rat")) {
-            current_mode = MODE_FRACTION;
-            continue;
-        }
-        if (str_eq(input, "format")) {
-            /* Reset to default */
-            current_mode = MODE_DECIMAL;
-            display_digits = 16;
-            continue;
-        }
         
         /* Angle mode commands */
         if (str_eq(input, "deg") || str_eq(input, "degrees")) {
@@ -184,8 +143,9 @@ int main(int argc, char *argv[])
             continue;
         }
         
-        /* Round command: set output rounding mode (only matches "round" or "round xxx", not "round(...)") */
-        if (str_eq(input, "round") || (str_starts(input, "round ") && input[5] == ' ')) {
+        /* Round command: set output rounding mode */
+        /* Only match "round" alone or "round <mode>", not "round(x)" function */
+        if (str_starts(input, "round") && (input[5] == '\0' || input[5] == ' ')) {
             const char *arg = input + 5;
             while (*arg == ' ') arg++;
             if (*arg == '\0') {
@@ -221,7 +181,7 @@ int main(int argc, char *argv[])
         if (str_eq(input, "funcs") || str_eq(input, "functions")) {
             int i, count = 0;
             
-            /* Show user-defined functions */
+            /* Show user-defined functions first */
             printf("User-defined functions:\n");
             for (i = 0; i < MAX_FUNCTIONS; i++) {
                 if (user_funcs[i].defined) {
@@ -231,230 +191,32 @@ int main(int argc, char *argv[])
             }
             if (count == 0) printf("  (none)\n");
             
-            /* Show built-in functions */
-            printf("\nBuilt-in functions (~420):\n\n");
-            
-            printf("TRIGONOMETRY:\n");
-            printf("  sin cos tan asin acos atan atan2 sinh cosh tanh\n");
-            printf("  asinh acosh atanh sec csc cot asec acsc acot\n");
-            printf("  sech csch coth asech acsch acoth\n");
-            printf("  sind cosd tand asind acosd atand atan2d sinc\n\n");
-            
-            printf("EXPONENTIAL & LOGARITHMIC:\n");
-            printf("  exp ln log log10 log2 exp2 pow sqrt cbrt nthroot\n");
-            printf("  log1p expm1 reallog realsqrt realpow\n\n");
-            
-            printf("COMPLEX NUMBERS:\n");
-            printf("  re real im imag conj arg angle abs phase\n");
-            printf("  complex cart2pol pol2cart\n\n");
-            
-            printf("ROUNDING & SIGN:\n");
-            printf("  floor ceil trunc round fix frac sign signum\n");
-            printf("  mod rem\n\n");
-            
-            printf("NUMBER THEORY:\n");
-            printf("  gcd lcm isprime nthprime nextprime prevprime primepi\n");
-            printf("  divisors totient mobius sigma omega radical\n");
-            printf("  digsum numdigits digitalroot ispalindrome\n");
-            printf("  triangular pentagonal hexagonal issquare istriangular\n");
-            printf("  isperfect isabundant isdeficient issquarefree ispower\n");
-            printf("  even odd ncr npr fact factorial factorial2 subfactorial\n");
-            printf("  fibonacci lucas catalan bell partition stirling2\n");
-            printf("  pochhammer falling gamma lgamma\n\n");
-            
-            printf("SPECIAL FUNCTIONS:\n");
-            printf("  erf erfc gamma lgamma beta digamma zeta harmonic\n");
-            printf("  besselj bessely sigmoid softplus step heaviside rect tri\n\n");
-            
-            printf("STATISTICS:\n");
-            printf("  sum mean median std var min max range\n");
-            printf("  geomean harmmean skewness kurtosis mad iqr\n");
-            printf("  rms sumsq meansq prctile zscore\n\n");
-            
-            printf("PROBABILITY DISTRIBUTIONS:\n");
-            printf("  normpdf normcdf norminv tcdf chi2cdf\n");
-            printf("  rand randn randi randperm\n\n");
-            
-            printf("LINEAR ALGEBRA:\n");
-            printf("  det inv trace trans eig rank cond norm\n");
-            printf("  linsolve mldivide\n\n");
-            
-            printf("MATRIX CREATION:\n");
-            printf("  zeros ones eye rand randn randi diag\n");
-            printf("  linspace logspace magic pascal hilb\n");
-            printf("  vander toeplitz hankel compan\n\n");
-            
-            printf("MATRIX MANIPULATION:\n");
-            printf("  reshape repmat rot90 flip fliplr flipud\n");
-            printf("  triu tril blkdiag cat horzcat vertcat\n");
-            printf("  circshift sort sortrows unique\n\n");
-            
-            printf("MATRIX QUERIES:\n");
-            printf("  size length rows cols numel ndims\n");
-            printf("  isempty isscalar isvector ismatrix issquare\n");
-            printf("  isrow iscolumn issorted issymmetric\n\n");
-            
-            printf("SIGNAL PROCESSING:\n");
-            printf("  conv deconv gradient\n");
-            printf("  movmean movsum diff cumsum cumprod\n");
-            printf("  interp1 trapz corrcoef\n\n");
-            
-            printf("POLYNOMIALS:\n");
-            printf("  polyval polyder polyint conv deconv\n\n");
-            
-            printf("ANGLE FUNCTIONS:\n");
-            printf("  deg2rad rad2deg hypot wrapToPi wrap180 wrap360\n\n");
-            
-            printf("SET OPERATIONS:\n");
-            printf("  unique union intersect setdiff setxor\n\n");
-            
-            printf("LOGICAL:\n");
-            printf("  and or not xor any all eq ne lt le gt ge\n");
-            printf("  isnan isinf isfinite isreal\n\n");
-            
-            printf("BITWISE:\n");
-            printf("  bitand bitor bitxor bitshift shl shr bnot\n\n");
-            
-            printf("COORDINATE TRANSFORMS:\n");
-            printf("  cart2pol pol2cart cart2sph sph2cart\n\n");
-            
-            printf("UTILITY:\n");
-            printf("  abs min max clamp rescale normalize find\n");
-            printf("  nextpow2 eps realmax realmin\n\n");
-            
-            printf("Type 'help <function>' for details on specific functions.\n");
+            /* Show all built-in functions from help database */
+            list_all_functions();
             continue;
         }
         
-        if (str_eq(input, "vars") || str_eq(input, "variables") || str_eq(input, "who")) {
+        if (str_eq(input, "vars") || str_eq(input, "variables")) {
             int i, count = 0;
-            printf("Your variables are:\n");
+            static char vbuf[256];
             /* Show scalar variables */
             for (i = 0; i < MAX_SCALAR_VARS; i++) {
                 if (scalar_vars[i].defined) {
-                    printf("  %c", 'a'+i);
+                    apfc_to_str(vbuf, sizeof(vbuf), &scalar_vars[i].val, display_digits);
+                    printf("  %c = %s\n", 'a'+i, vbuf);
                     count++;
                 }
             }
             /* Show matrix variables */
             for (i = 0; i < MAX_MATRIX_VARS; i++) {
                 if (matrix_vars[i].defined) {
-                    printf("  %c", matrix_vars[i].name);
+                    printf("  %c = [%dx%d matrix]\n", matrix_vars[i].name, 
+                           matrix_vars[i].val.rows,
+                           matrix_vars[i].val.cols);
                     count++;
                 }
             }
-#ifdef HAVE_NAMED_VARS
-            /* Show named variables */
-            for (i = 0; i < MAX_NAMED_VARS; i++) {
-                if (named_vars[i].defined) {
-                    printf("  %s", named_vars[i].name);
-                    count++;
-                }
-            }
-#endif
-            if (count > 0) printf("\n");
-            else printf("  (none)\n");
-            continue;
-        }
-        
-        if (str_eq(input, "whos")) {
-            int i, count = 0, total_bytes = 0;
-            printf("  Name          Size        Bytes    Class\n");
-            printf("  ====          ====        =====    =====\n");
-            /* Show scalar variables */
-            for (i = 0; i < MAX_SCALAR_VARS; i++) {
-                if (scalar_vars[i].defined) {
-                    int bytes = (int)sizeof(apfc);
-                    printf("  %-12c  1x1         %-8d apfc\n", 'a'+i, bytes);
-                    count++;
-                    total_bytes += bytes;
-                }
-            }
-            /* Show matrix variables */
-            for (i = 0; i < MAX_MATRIX_VARS; i++) {
-                if (matrix_vars[i].defined) {
-                    int rows = matrix_vars[i].val.rows;
-                    int cols = matrix_vars[i].val.cols;
-                    int bytes = rows * cols * (int)sizeof(apfc);
-                    printf("  %-12c  %dx%-8d %-8d matrix\n", matrix_vars[i].name, 
-                           rows, cols, bytes);
-                    count++;
-                    total_bytes += bytes;
-                }
-            }
-#ifdef HAVE_NAMED_VARS
-            /* Show named variables */
-            for (i = 0; i < MAX_NAMED_VARS; i++) {
-                if (named_vars[i].defined) {
-                    if (named_vars[i].type == VAL_SCALAR) {
-                        int bytes = (int)sizeof(apfc);
-                        printf("  %-12s  1x1         %-8d apfc\n", named_vars[i].name, bytes);
-                        total_bytes += bytes;
-                    } else {
-                        int rows = named_vars[i].val.matrix.rows;
-                        int cols = named_vars[i].val.matrix.cols;
-                        int bytes = rows * cols * (int)sizeof(apfc);
-                        printf("  %-12s  %dx%-8d %-8d matrix\n", named_vars[i].name, 
-                               rows, cols, bytes);
-                        total_bytes += bytes;
-                    }
-                    count++;
-                }
-            }
-#endif
-            printf("\nTotal: %d elements using %d bytes\n", count, total_bytes);
-            continue;
-        }
-        
-        if (str_eq(input, "clear")) {
-            int i;
-            /* Clear all scalar variables */
-            for (i = 0; i < MAX_SCALAR_VARS; i++) {
-                scalar_vars[i].defined = 0;
-            }
-            /* Clear all matrix variables */
-            for (i = 0; i < MAX_MATRIX_VARS; i++) {
-                matrix_vars[i].defined = 0;
-            }
-#ifdef HAVE_NAMED_VARS
-            /* Clear all named variables */
-            for (i = 0; i < MAX_NAMED_VARS; i++) {
-                named_vars[i].defined = 0;
-            }
-#endif
-            continue;
-        }
-        
-        /* Clear specific variable: clear x */
-        if (str_starts(input, "clear ")) {
-            const char *vname = input + 6;
-            int var_idx;
-            while (*vname == ' ') vname++;
-            var_idx = get_var_index(vname);
-            if (var_idx >= 0) {
-                scalar_vars[var_idx].defined = 0;
-                /* Also check matrix vars */
-                {
-                    int i;
-                    for (i = 0; i < MAX_MATRIX_VARS; i++) {
-                        if (matrix_vars[i].defined && matrix_vars[i].name == 'a' + var_idx) {
-                            matrix_vars[i].defined = 0;
-                            break;
-                        }
-                    }
-                }
-            }
-#ifdef HAVE_NAMED_VARS
-            else {
-                int i;
-                for (i = 0; i < MAX_NAMED_VARS; i++) {
-                    if (named_vars[i].defined && str_eq(named_vars[i].name, vname)) {
-                        named_vars[i].defined = 0;
-                        break;
-                    }
-                }
-            }
-#endif
+            if (count == 0) printf("No variables defined.\n");
             continue;
         }
         
@@ -582,57 +344,56 @@ int main(int argc, char *argv[])
         }
 #endif
         
-        /* Lorenz attractor: lorenz [steps] (classic params: sigma=10, rho=28, beta=8/3) */
+        /* Lorenz attractor: lorenz [sigma rho beta] [steps] */
         if (str_starts(input, "lorenz")) {
+            double sigma = 10.0, rho = 28.0, beta = 8.0/3.0;
             int steps = 5000;
             char *p = input + 6;
             
+            /* Parse optional parameters */
             while (*p == ' ') p++;
             if (*p) {
-                int n;
-                if (sscanf(p, "%d", &n) == 1) {
-                    steps = n;
+                if (sscanf(p, "%lf %lf %lf %d", &sigma, &rho, &beta, &steps) < 3) {
+                    if (sscanf(p, "%d", &steps) != 1) {
+                        steps = 5000;
+                    }
                 }
             }
             if (steps < 100) steps = 100;
             if (steps > 50000) steps = 50000;
             
-            /* Classic parameters: sigma=10, rho=28, beta=8/3 */
-            do_lorenz_text(10, 28, 8, 3, steps);
+            do_lorenz_text((long)sigma, (long)rho, (long)(beta*3), 3, steps);
             continue;
         }
         
-        /* Rossler attractor: rossler [steps] (classic params: a=0.2, b=0.2, c=5.7) */
+        /* Rossler attractor: rossler [a b c] [steps] */
         if (str_starts(input, "rossler")) {
+            double a = 0.2, b = 0.2, c = 5.7;
             int steps = 5000;
             char *p = input + 7;
             
             while (*p == ' ') p++;
             if (*p) {
-                int n;
-                if (sscanf(p, "%d", &n) == 1) {
-                    steps = n;
+                if (sscanf(p, "%lf %lf %lf %d", &a, &b, &c, &steps) < 3) {
+                    if (sscanf(p, "%d", &steps) != 1) {
+                        steps = 5000;
+                    }
                 }
             }
             if (steps < 100) steps = 100;
             if (steps > 50000) steps = 50000;
             
-            /* Classic parameters: a=1/5, b=1/5, c=57/10 */
-            do_rossler_text(1, 5, 1, 5, 57, 10, steps);
+            do_rossler_text((long)(a*10), 10, (long)(b*10), 10, (long)(c*10), 10, steps);
             continue;
         }
         
         /* Parametric plot: parametric xfunc yfunc [tmin:tmax] [steps] */
         if (str_starts(input, "parametric ")) {
             char xfunc[16], yfunc[16];
-            apf tmin, tmax;
+            double tmin = 0, tmax = 6.283185;  /* 0 to 2*pi default */
             int steps = 500;
             char *p = input + 11;
             int xi = 0, yi = 0;
-            
-            /* Default t range: 0 to 2*pi (use 0 to 6 as integer approx) */
-            apf_from_int(&tmin, 0);
-            apf_from_int(&tmax, 6);
             
             /* Skip whitespace and get first function name */
             while (*p == ' ') p++;
@@ -651,82 +412,61 @@ int main(int argc, char *argv[])
             /* Parse optional range and steps */
             while (*p == ' ') p++;
             if (*p) {
-                long v1, v2;
+                double v1, v2;
                 int n;
-                if (sscanf(p, "%ld:%ld %d", &v1, &v2, &n) >= 2) {
-                    apf_from_int(&tmin, v1);
-                    apf_from_int(&tmax, v2);
+                if (sscanf(p, "%lf:%lf %d", &v1, &v2, &n) >= 2) {
+                    tmin = v1;
+                    tmax = v2;
                     if (n > 0) steps = n;
                 } else if (sscanf(p, "%d", &n) == 1) {
                     steps = n;
                 }
             }
             if (steps < 50) steps = 50;
-            if (steps > 500) steps = 500;  /* Reduced for DOS memory */
+            if (steps > 2000) steps = 2000;
             
             if (xi == 0 || yi == 0) {
                 printf("Usage: parametric xfunc yfunc [tmin:tmax] [steps]\n");
-                printf("Example: parametric f g 0:6 500\n");
+                printf("Example: parametric f g 0:6.28 500\n");
             } else {
-                do_parametric_text(xfunc, yfunc, &tmin, &tmax, steps);
+                apf tmin_apf, tmax_apf; { apf t; apf_from_int(&tmin_apf, (long)(tmin * 1000)); apf_from_int(&t, 1000); apf_div(&tmin_apf, &tmin_apf, &t); apf_from_int(&tmax_apf, (long)(tmax * 1000)); apf_div(&tmax_apf, &tmax_apf, &t); }
+                do_parametric_text(xfunc, yfunc, &tmin_apf, &tmax_apf, steps);
             }
             continue;
         }
         
-        /* Plot command: plot EXPR [var=min:max]
-         * New syntax:
-         *   plot sin(x) x=-3.14:3.14
-         *   plot sin(t) t=-1:1  
-         *   plot f(y) y=-1:1
-         *   plot x^2+1 x=-5:5
-         * Old syntax (still supported):
-         *   plot sin(x) -3.14:3.14     (assumes x)
-         *   plot f -5:5                 (user function)
+        /* Plot command: plot EXPR [range] - can plot any expression with x
+         * Examples: plot sin(x)
+         *           plot x^2+x -1:1
+         *           plot f(x) -5:5
+         *           plot isprime(x) 0:100
          */
         if (str_starts(input, "plot ") || str_starts(input, "textplot ")) {
             int text_mode = str_starts(input, "textplot ");
             static char expr_buf[256];
             char *p = input + (text_mode ? 9 : 5);
             char *range_start = NULL;
-            char *var_pos = NULL;
-            char var = 'x';  /* Default variable */
             int ei = 0;
             apf xmin, xmax;
             
             /* Skip leading whitespace */
             while (*p == ' ') p++;
             
-            /* Look for new syntax: var=min:max 
-             * Scan for single letter followed by = then range */
+            /* Find where range starts: look for " -N:" or " N:" pattern
+             * Scan through to find space followed by digit/minus then eventually colon */
             {
                 char *scan = p;
                 while (*scan) {
                     if (*scan == ' ') {
                         char *after_space = scan + 1;
                         while (*after_space == ' ') after_space++;
-                        
-                        /* Check for var=range pattern: single letter, then =, then number/minus */
-                        if (after_space[0] >= 'a' && after_space[0] <= 'z' && 
-                            after_space[1] == '=') {
-                            char *check = after_space + 2;
-                            if (*check == '-' || (*check >= '0' && *check <= '9')) {
-                                /* Check for colon */
-                                while (*check && *check != ':' && *check != ' ') check++;
-                                if (*check == ':') {
-                                    var_pos = after_space;
-                                    var = after_space[0];
-                                    range_start = after_space + 2;
-                                    break;
-                                }
-                            }
-                        }
-                        
-                        /* Fall back to old syntax: just min:max */
+                        /* Check if this looks like a range: starts with -, digit, or xrange */
                         if (str_starts(after_space, "xrange")) {
                             range_start = after_space;
                             break;
                         }
                         if (*after_space == '-' || (*after_space >= '0' && *after_space <= '9')) {
+                            /* Scan forward to see if there's a colon */
                             char *colon_check = after_space;
                             while (*colon_check && *colon_check != ' ' && *colon_check != ':') {
                                 colon_check++;
@@ -741,33 +481,31 @@ int main(int argc, char *argv[])
                 }
             }
             
-            /* Copy expression (everything before var= or range) */
-            {
-                char *end_expr = var_pos ? var_pos - 1 : (range_start ? range_start - 1 : NULL);
-                if (end_expr) {
-                    while (p < end_expr && ei < 255) {
-                        expr_buf[ei++] = *p++;
-                    }
-                    /* Trim trailing spaces */
-                    while (ei > 0 && expr_buf[ei-1] == ' ') ei--;
-                } else {
-                    /* No range - copy whole expression */
-                    while (*p && ei < 255) {
-                        expr_buf[ei++] = *p++;
-                    }
-                    while (ei > 0 && expr_buf[ei-1] == ' ') ei--;
+            /* Copy expression (everything before range) */
+            if (range_start) {
+                /* Copy up to the space before range */
+                while (p < range_start - 1 && ei < 255) {
+                    expr_buf[ei++] = *p++;
                 }
+                /* Trim trailing spaces */
+                while (ei > 0 && expr_buf[ei-1] == ' ') ei--;
+            } else {
+                /* No range - copy whole expression */
+                while (*p && ei < 255) {
+                    expr_buf[ei++] = *p++;
+                }
+                /* Trim trailing spaces */
+                while (ei > 0 && expr_buf[ei-1] == ' ') ei--;
             }
             expr_buf[ei] = '\0';
             
-            /* If expression is just a single-letter function name followed by (var), strip it
-             * This is for user-defined functions like f(x), g(y), etc.
+            /* If expression is just a single-letter function name followed by (x), strip the (x)
+             * This is for user-defined functions like f(x), g(x), etc.
+             * Don't strip from built-in functions like sin(x), cos(x), etc.
              */
             if (ei == 4 && expr_buf[0] >= 'a' && expr_buf[0] <= 'z' &&
-                expr_buf[1] == '(' && expr_buf[2] >= 'a' && expr_buf[2] <= 'z' && 
-                expr_buf[3] == ')') {
-                /* Single letter function like f(x) or g(t) - strip to just "f" */
-                if (var_pos == NULL) var = expr_buf[2];  /* Infer var from f(x) */
+                expr_buf[1] == '(' && expr_buf[2] == 'x' && expr_buf[3] == ')') {
+                /* Single letter function like f(x) - strip to just "f" */
                 expr_buf[1] = '\0';
             }
             
@@ -855,13 +593,13 @@ int main(int argc, char *argv[])
             
 #ifdef HAVE_CONIO
             if (text_mode) {
-                do_textplot(expr_buf, var, &xmin, &xmax);
+                do_textplot(expr_buf, &xmin, &xmax);
             } else {
-                do_plot(expr_buf, var, &xmin, &xmax);
+                do_plot(expr_buf, 'x', &xmin, &xmax);
             }
 #else
             /* On Linux, both plot and textplot use text mode */
-            do_plot(expr_buf, var, &xmin, &xmax);
+            do_plot(expr_buf, 'x', &xmin, &xmax);
 #endif
             continue;
         }
@@ -1078,383 +816,112 @@ int main(int argc, char *argv[])
             apf_zero(&last_result.v.scalar.re);
             apf_zero(&last_result.v.scalar.im);
             
-            /* Skip empty lines and comment-only lines */
-            if (current_token.type == TOK_END) {
-                continue;
-            }
-            
             while (!done) {
                 /* Handle multi-value assignment: [A,B,C] = func(x) */
                 if (current_token.type == TOK_LBRACKET) {
-                    char var_names[8][32];
-                    int var_indices[8];
-                    int num_vars = 0;
-                    const char *saved_pos = input_ptr;
-                    token_t saved_tok = current_token;
-                    int is_multi_assign = 0;
-                    
+                    char mvnames[8][32]; int mvidx[8]; int mvnum = 0;
+                    const char *mvsaved = input_ptr; token_t mvtok = current_token;
+                    int ismv = 0;
                     next_token();
-                    
-                    /* Parse variable names */
-                    while (num_vars < 8 && current_token.type != TOK_RBRACKET && 
-                           current_token.type != TOK_END) {
-                        if (current_token.type == TOK_FUNC) {
-                            strcpy(var_names[num_vars], current_token.func_name);
-                            var_names[num_vars][31] = '\0';
-                            var_indices[num_vars] = get_var_index(var_names[num_vars]);
-                            num_vars++;
-                        } else if (current_token.type == TOK_IMAG) {
-                            strcpy(var_names[num_vars], "i");
-                            var_indices[num_vars] = get_var_index("i");
-                            num_vars++;
-                        } else {
-                            break;
-                        }
-                        next_token();
-                        if (current_token.type == TOK_COMMA) {
-                            next_token();
-                        }
+                    while (mvnum < 8 && current_token.type != TOK_RBRACKET && current_token.type != TOK_END) {
+                        if (current_token.type == TOK_FUNC) { strcpy(mvnames[mvnum], current_token.func_name); mvidx[mvnum] = get_var_index(mvnames[mvnum]); mvnum++; }
+                        else if (current_token.type == TOK_IMAG) { strcpy(mvnames[mvnum], "i"); mvidx[mvnum] = get_var_index("i"); mvnum++; }
+                        else break;
+                        next_token(); if (current_token.type == TOK_COMMA) next_token();
                     }
-                    
-                    if (current_token.type == TOK_RBRACKET && num_vars > 0) {
+                    if (current_token.type == TOK_RBRACKET && mvnum > 0) { next_token(); if (current_token.type == TOK_ASSIGN) ismv = 1; }
+                    if (ismv) {
                         next_token();
-                        if (current_token.type == TOK_ASSIGN) {
-                            is_multi_assign = 1;
-                        }
-                    }
-                    
-                    if (is_multi_assign) {
-                        /* Parse the function call */
-                        next_token();
-                        
                         if (current_token.type == TOK_FUNC) {
-                            char func_name[32];
-                            strncpy(func_name, current_token.func_name, 31);
-                            func_name[31] = '\0';
-                            
-                            next_token();
+                            char fn[32]; strcpy(fn, current_token.func_name); next_token();
                             if (current_token.type == TOK_LPAREN) {
                                 next_token();
-                                
-                                /* SVD: [U,S,V] = svd(A) */
-                                if (strcmp(func_name, "svd") == 0 && num_vars == 3) {
-                                    value_t arg;
-                                    matrix_t U, S, V;
-                                    
-                                    if (parse_value(&arg) && current_token.type == TOK_RPAREN) {
-                                        next_token();
-                                        if (arg.type != VAL_MATRIX) {
-                                            mat_zero(&arg.v.matrix, 1, 1);
-                                            MAT_AT(&arg.v.matrix, 0, 0) = arg.v.scalar;
-                                        }
-                                        
+                                if (strcmp(fn, "svd") == 0 && mvnum == 3) {
+                                    value_t arg; matrix_t U, S, V;
+                                    if (parse_value(&arg) && current_token.type == TOK_RPAREN) { next_token();
+                                        if (arg.type != VAL_MATRIX) { mat_zero(&arg.v.matrix, 1, 1); MAT_AT(&arg.v.matrix, 0, 0) = arg.v.scalar; }
                                         if (mat_svd(&U, &S, &V, &arg.v.matrix)) {
-                                            value_t v;
-                                            v.type = VAL_MATRIX;
-                                            
-                                            mat_copy(&v.v.matrix, &U);
-                                            if (var_indices[0] >= 0) set_var_value(var_indices[0], &v);
-#ifdef HAVE_NAMED_VARS
-                                            else set_named_matrix(var_names[0], &v.v.matrix);
-#endif
-                                            
-                                            mat_copy(&v.v.matrix, &S);
-                                            if (var_indices[1] >= 0) set_var_value(var_indices[1], &v);
-#ifdef HAVE_NAMED_VARS
-                                            else set_named_matrix(var_names[1], &v.v.matrix);
-#endif
-                                            
-                                            mat_copy(&v.v.matrix, &V);
-                                            if (var_indices[2] >= 0) set_var_value(var_indices[2], &v);
-#ifdef HAVE_NAMED_VARS
-                                            else set_named_matrix(var_names[2], &v.v.matrix);
-#endif
-                                            
-                                            last_result.type = VAL_MATRIX;
-                                            mat_copy(&last_result.v.matrix, &U);
+                                            value_t v; v.type = VAL_MATRIX;
+                                            mat_copy(&v.v.matrix, &U); if (mvidx[0] >= 0) set_var_value(mvidx[0], &v); else set_named_matrix(mvnames[0], &v.v.matrix);
+                                            mat_copy(&v.v.matrix, &S); if (mvidx[1] >= 0) set_var_value(mvidx[1], &v); else set_named_matrix(mvnames[1], &v.v.matrix);
+                                            mat_copy(&v.v.matrix, &V); if (mvidx[2] >= 0) set_var_value(mvidx[2], &v); else set_named_matrix(mvnames[2], &v.v.matrix);
                                             has_result = 0;
-                                        } else {
-                                            printf("Error: SVD failed\n");
-                                            done = 1;
-                                        }
-                                    } else {
-                                        printf("Error: svd requires matrix argument\n");
-                                        done = 1;
-                                    }
-                                }
-                                /* QR: [Q,R] = qr(A) */
-                                else if (strcmp(func_name, "qr") == 0 && num_vars == 2) {
-                                    value_t arg;
-                                    matrix_t Q, R;
-                                    
-                                    if (parse_value(&arg) && current_token.type == TOK_RPAREN) {
-                                        next_token();
-                                        if (arg.type != VAL_MATRIX) {
-                                            mat_zero(&arg.v.matrix, 1, 1);
-                                            MAT_AT(&arg.v.matrix, 0, 0) = arg.v.scalar;
-                                        }
-                                        
+                                        } else { printf("Error: SVD failed\n"); done = 1; }
+                                    } else { printf("Error: svd syntax\n"); done = 1; }
+                                } else if (strcmp(fn, "qr") == 0 && mvnum == 2) {
+                                    value_t arg; matrix_t Q, R;
+                                    if (parse_value(&arg) && current_token.type == TOK_RPAREN) { next_token();
+                                        if (arg.type != VAL_MATRIX) { mat_zero(&arg.v.matrix, 1, 1); MAT_AT(&arg.v.matrix, 0, 0) = arg.v.scalar; }
                                         if (mat_qr(&Q, &R, &arg.v.matrix)) {
-                                            value_t v;
-                                            v.type = VAL_MATRIX;
-                                            
-                                            mat_copy(&v.v.matrix, &Q);
-                                            if (var_indices[0] >= 0) set_var_value(var_indices[0], &v);
-#ifdef HAVE_NAMED_VARS
-                                            else set_named_matrix(var_names[0], &v.v.matrix);
-#endif
-                                            
-                                            mat_copy(&v.v.matrix, &R);
-                                            if (var_indices[1] >= 0) set_var_value(var_indices[1], &v);
-#ifdef HAVE_NAMED_VARS
-                                            else set_named_matrix(var_names[1], &v.v.matrix);
-#endif
-                                            
-                                            last_result.type = VAL_MATRIX;
-                                            mat_copy(&last_result.v.matrix, &Q);
+                                            value_t v; v.type = VAL_MATRIX;
+                                            mat_copy(&v.v.matrix, &Q); if (mvidx[0] >= 0) set_var_value(mvidx[0], &v); else set_named_matrix(mvnames[0], &v.v.matrix);
+                                            mat_copy(&v.v.matrix, &R); if (mvidx[1] >= 0) set_var_value(mvidx[1], &v); else set_named_matrix(mvnames[1], &v.v.matrix);
                                             has_result = 0;
-                                        } else {
-                                            printf("Error: QR decomposition failed\n");
-                                            done = 1;
-                                        }
-                                    } else {
-                                        printf("Error: qr requires matrix argument\n");
-                                        done = 1;
-                                    }
-                                }
-                                /* LU: [L,U] = lu(A) or [L,U,P] = lu(A) */
-                                else if (strcmp(func_name, "lu") == 0 && (num_vars == 2 || num_vars == 3)) {
-                                    value_t arg;
-                                    matrix_t L, U_mat;
-                                    int perm[MAT_MAX_ROWS];
-                                    
-                                    if (parse_value(&arg) && current_token.type == TOK_RPAREN) {
-                                        next_token();
-                                        if (arg.type != VAL_MATRIX) {
-                                            mat_zero(&arg.v.matrix, 1, 1);
-                                            MAT_AT(&arg.v.matrix, 0, 0) = arg.v.scalar;
-                                        }
-                                        
-                                        if (mat_lu(&L, &U_mat, perm, &arg.v.matrix)) {
-                                            value_t v;
-                                            v.type = VAL_MATRIX;
-                                            
-                                            mat_copy(&v.v.matrix, &L);
-                                            if (var_indices[0] >= 0) set_var_value(var_indices[0], &v);
-#ifdef HAVE_NAMED_VARS
-                                            else set_named_matrix(var_names[0], &v.v.matrix);
-#endif
-                                            
-                                            mat_copy(&v.v.matrix, &U_mat);
-                                            if (var_indices[1] >= 0) set_var_value(var_indices[1], &v);
-#ifdef HAVE_NAMED_VARS
-                                            else set_named_matrix(var_names[1], &v.v.matrix);
-#endif
-                                            
-                                            if (num_vars == 3) {
-                                                int ii, nn = arg.v.matrix.rows;
-                                                mat_zero(&v.v.matrix, nn, nn);
-                                                for (ii = 0; ii < nn; ii++) {
-                                                    apf_from_int(&MAT_AT(&v.v.matrix, ii, perm[ii]).re, 1);
-                                                }
-                                                if (var_indices[2] >= 0) set_var_value(var_indices[2], &v);
-#ifdef HAVE_NAMED_VARS
-                                                else set_named_matrix(var_names[2], &v.v.matrix);
-#endif
-                                            }
-                                            
-                                            last_result.type = VAL_MATRIX;
-                                            mat_copy(&last_result.v.matrix, &L);
+                                        } else { printf("Error: QR failed\n"); done = 1; }
+                                    } else { printf("Error: qr syntax\n"); done = 1; }
+                                } else if (strcmp(fn, "lu") == 0 && mvnum >= 2) {
+                                    value_t arg; matrix_t L, Um; int perm[MAT_MAX_ROWS];
+                                    if (parse_value(&arg) && current_token.type == TOK_RPAREN) { next_token();
+                                        if (arg.type != VAL_MATRIX) { mat_zero(&arg.v.matrix, 1, 1); MAT_AT(&arg.v.matrix, 0, 0) = arg.v.scalar; }
+                                        if (mat_lu(&L, &Um, perm, &arg.v.matrix)) {
+                                            value_t v; int ii; v.type = VAL_MATRIX;
+                                            mat_copy(&v.v.matrix, &L); if (mvidx[0] >= 0) set_var_value(mvidx[0], &v); else set_named_matrix(mvnames[0], &v.v.matrix);
+                                            mat_copy(&v.v.matrix, &Um); if (mvidx[1] >= 0) set_var_value(mvidx[1], &v); else set_named_matrix(mvnames[1], &v.v.matrix);
+                                            if (mvnum == 3) { int nn = arg.v.matrix.rows; mat_zero(&v.v.matrix, nn, nn);
+                                                for (ii = 0; ii < nn; ii++) apf_from_int(&MAT_AT(&v.v.matrix, ii, perm[ii]).re, 1);
+                                                if (mvidx[2] >= 0) set_var_value(mvidx[2], &v); else set_named_matrix(mvnames[2], &v.v.matrix); }
                                             has_result = 0;
-                                        } else {
-                                            printf("Error: LU decomposition failed\n");
-                                            done = 1;
-                                        }
-                                    } else {
-                                        printf("Error: lu requires matrix argument\n");
-                                        done = 1;
-                                    }
-                                }
-                                /* Schur: [Q,T] = schur(A) */
-                                else if (strcmp(func_name, "schur") == 0 && num_vars == 2) {
-                                    value_t arg;
-                                    matrix_t Q, T;
-                                    
-                                    if (parse_value(&arg) && current_token.type == TOK_RPAREN) {
-                                        next_token();
-                                        if (arg.type != VAL_MATRIX) {
-                                            mat_zero(&arg.v.matrix, 1, 1);
-                                            MAT_AT(&arg.v.matrix, 0, 0) = arg.v.scalar;
-                                        }
-                                        
-                                        if (mat_schur(&Q, &T, &arg.v.matrix)) {
-                                            value_t v;
-                                            v.type = VAL_MATRIX;
-                                            
-                                            mat_copy(&v.v.matrix, &Q);
-                                            if (var_indices[0] >= 0) set_var_value(var_indices[0], &v);
-#ifdef HAVE_NAMED_VARS
-                                            else set_named_matrix(var_names[0], &v.v.matrix);
-#endif
-                                            
-                                            mat_copy(&v.v.matrix, &T);
-                                            if (var_indices[1] >= 0) set_var_value(var_indices[1], &v);
-#ifdef HAVE_NAMED_VARS
-                                            else set_named_matrix(var_names[1], &v.v.matrix);
-#endif
-                                            
-                                            last_result.type = VAL_MATRIX;
-                                            mat_copy(&last_result.v.matrix, &Q);
+                                        } else { printf("Error: LU failed\n"); done = 1; }
+                                    } else { printf("Error: lu syntax\n"); done = 1; }
+                                } else if (strcmp(fn, "pca") == 0 && mvnum == 3) {
+                                    value_t arg; matrix_t coeff, score, latent;
+                                    if (parse_value(&arg) && current_token.type == TOK_RPAREN) { next_token();
+                                        if (arg.type != VAL_MATRIX) { printf("Error: pca requires matrix\n"); done = 1; }
+                                        else if (mat_pca(&coeff, &score, &latent, &arg.v.matrix)) {
+                                            value_t v; v.type = VAL_MATRIX;
+                                            mat_copy(&v.v.matrix, &coeff); if (mvidx[0] >= 0) set_var_value(mvidx[0], &v); else set_named_matrix(mvnames[0], &v.v.matrix);
+                                            mat_copy(&v.v.matrix, &score); if (mvidx[1] >= 0) set_var_value(mvidx[1], &v); else set_named_matrix(mvnames[1], &v.v.matrix);
+                                            mat_copy(&v.v.matrix, &latent); if (mvidx[2] >= 0) set_var_value(mvidx[2], &v); else set_named_matrix(mvnames[2], &v.v.matrix);
                                             has_result = 0;
-                                        } else {
-                                            printf("Error: Schur decomposition failed\n");
-                                            done = 1;
-                                        }
-                                    } else {
-                                        printf("Error: schur requires matrix argument\n");
-                                        done = 1;
-                                    }
-                                }
-                                /* Cholesky: [L] = chol(A) */
-                                else if (strcmp(func_name, "chol") == 0 && num_vars == 1) {
-                                    value_t arg;
-                                    matrix_t L;
-                                    
-                                    if (parse_value(&arg) && current_token.type == TOK_RPAREN) {
-                                        next_token();
-                                        if (arg.type != VAL_MATRIX) {
-                                            mat_zero(&arg.v.matrix, 1, 1);
-                                            MAT_AT(&arg.v.matrix, 0, 0) = arg.v.scalar;
-                                        }
-                                        
-                                        if (mat_chol(&L, &arg.v.matrix)) {
-                                            value_t v;
-                                            v.type = VAL_MATRIX;
-                                            
-                                            mat_copy(&v.v.matrix, &L);
-                                            if (var_indices[0] >= 0) set_var_value(var_indices[0], &v);
-#ifdef HAVE_NAMED_VARS
-                                            else set_named_matrix(var_names[0], &v.v.matrix);
-#endif
-                                            
-                                            last_result.type = VAL_MATRIX;
-                                            mat_copy(&last_result.v.matrix, &L);
-                                            has_result = 0;
-                                        } else {
-                                            printf("Error: Cholesky decomposition failed\n");
-                                            done = 1;
-                                        }
-                                    } else {
-                                        printf("Error: chol requires matrix argument\n");
-                                        done = 1;
-                                    }
-                                }
-                                /* Eigenvalues: [V,D] = eig(A) */
-                                else if (strcmp(func_name, "eig") == 0 && num_vars == 2) {
-                                    value_t arg;
-                                    matrix_t eigenvalues;
-                                    
-                                    if (parse_value(&arg) && current_token.type == TOK_RPAREN) {
-                                        next_token();
-                                        if (arg.type != VAL_MATRIX) {
-                                            mat_zero(&arg.v.matrix, 1, 1);
-                                            MAT_AT(&arg.v.matrix, 0, 0) = arg.v.scalar;
-                                        }
-                                        
-                                        if (mat_eig(&eigenvalues, &arg.v.matrix)) {
-                                            value_t v;
-                                            int ii, nn = eigenvalues.rows;
-                                            matrix_t D;
-                                            
-                                            v.type = VAL_MATRIX;
-                                            mat_identity(&v.v.matrix, nn);
-                                            if (var_indices[0] >= 0) set_var_value(var_indices[0], &v);
-#ifdef HAVE_NAMED_VARS
-                                            else set_named_matrix(var_names[0], &v.v.matrix);
-#endif
-                                            
-                                            mat_zero(&D, nn, nn);
-                                            for (ii = 0; ii < nn; ii++) {
-                                                MAT_AT(&D, ii, ii) = MAT_AT(&eigenvalues, ii, 0);
-                                            }
-                                            mat_copy(&v.v.matrix, &D);
-                                            if (var_indices[1] >= 0) set_var_value(var_indices[1], &v);
-#ifdef HAVE_NAMED_VARS
-                                            else set_named_matrix(var_names[1], &v.v.matrix);
-#endif
-                                            
-                                            last_result.type = VAL_MATRIX;
-                                            mat_identity(&last_result.v.matrix, nn);
-                                            has_result = 0;
-                                        } else {
-                                            printf("Error: eigenvalue decomposition failed\n");
-                                            done = 1;
-                                        }
-                                    } else {
-                                        printf("Error: eig requires matrix argument\n");
-                                        done = 1;
-                                    }
-                                }
-                                else {
-                                    printf("Error: unknown multi-return function '%s' with %d outputs\n", 
-                                           func_name, num_vars);
-                                    done = 1;
-                                }
-                            } else {
-                                printf("Error: expected '(' after function name\n");
-                                done = 1;
-                            }
-                        } else {
-                            printf("Error: expected function call after [vars] =\n");
-                            done = 1;
-                        }
-                        
-                        if (!done) {
-                            if (current_token.type == TOK_SEMI) {
-                                next_token();
-                                if (current_token.type == TOK_END) done = 1;
-                            } else if (current_token.type == TOK_END) {
-                                done = 1;
-                            }
-                        }
+                                        } else { printf("Error: PCA failed\n"); done = 1; }
+                                    } else { printf("Error: pca syntax\n"); done = 1; }
+                                } else if (strcmp(fn, "kmeans") == 0 && mvnum == 2) {
+                                    value_t arg, karg; matrix_t idx_m, cent; int k;
+                                    if (parse_value(&arg) && current_token.type == TOK_COMMA) { next_token();
+                                        if (parse_value(&karg) && current_token.type == TOK_RPAREN) { next_token();
+                                            if (arg.type != VAL_MATRIX) { printf("Error: kmeans requires matrix\n"); done = 1; }
+                                            else { k = (karg.type == VAL_SCALAR) ? apf_to_long(&karg.v.scalar.re) : 2;
+                                                if (mat_kmeans(&idx_m, &cent, &arg.v.matrix, k)) {
+                                                    value_t v; v.type = VAL_MATRIX;
+                                                    mat_copy(&v.v.matrix, &idx_m); if (mvidx[0] >= 0) set_var_value(mvidx[0], &v); else set_named_matrix(mvnames[0], &v.v.matrix);
+                                                    mat_copy(&v.v.matrix, &cent); if (mvidx[1] >= 0) set_var_value(mvidx[1], &v); else set_named_matrix(mvnames[1], &v.v.matrix);
+                                                    has_result = 0;
+                                                } else { printf("Error: kmeans failed\n"); done = 1; } }
+                                        } else { printf("Error: kmeans(X,k) syntax\n"); done = 1; }
+                                    } else { printf("Error: kmeans(X,k) syntax\n"); done = 1; }
+                                } else { printf("Error: unknown [a,b]=func '%s' with %d outputs\n", fn, mvnum); done = 1; }
+                            } else { printf("Error: expected '('\n"); done = 1; }
+                        } else { printf("Error: expected function\n"); done = 1; }
+                        if (!done) { if (current_token.type == TOK_SEMI) { next_token(); if (current_token.type == TOK_END) done = 1; } else if (current_token.type == TOK_END) done = 1; }
                         continue;
-                    } else {
-                        input_ptr = saved_pos;
-                        current_token = saved_tok;
-                    }
+                    } else { input_ptr = mvsaved; current_token = mvtok; }
                 }
-                
                 /* Check for variable assignment: x = expr (including 'i' which is TOK_IMAG) */
                 if (current_token.type == TOK_FUNC || current_token.type == TOK_IMAG) {
-                    char var_name[32];
+                    char var_name[16];
                     int var_idx;
                     const char *saved_pos = input_ptr;
                     token_t saved_tok = current_token;
-#ifdef HAVE_NAMED_VARS
-                    int is_named = 0;
-#endif
                     
                     if (current_token.type == TOK_IMAG) {
                         strcpy(var_name, "i");
                     } else {
-                        strncpy(var_name, current_token.func_name, sizeof(var_name)-1);
-                        var_name[sizeof(var_name)-1] = '\0';
+                        strcpy(var_name, current_token.func_name);
                     }
                     var_idx = get_var_index(var_name);
                     
-#ifdef HAVE_NAMED_VARS
-                    /* Check if it's a multi-character name */
-                    if (var_idx < 0 && strlen(var_name) > 1) {
-                        is_named = 1;
-                    }
-#endif
-                    
                     next_token();
-                    if ((var_idx >= 0
-#ifdef HAVE_NAMED_VARS
-                         || is_named
-#endif
-                        ) && current_token.type == TOK_ASSIGN) {
+                    if (var_idx >= 0 && current_token.type == TOK_ASSIGN) {
                         /* Check if this is assignment or equality check */
                         next_token();
                         if (current_token.type == TOK_END || current_token.type == TOK_SEMI) {
@@ -1469,18 +936,7 @@ int main(int argc, char *argv[])
                             done = 1;
                             continue;
                         }
-#ifdef HAVE_NAMED_VARS
-                        if (is_named) {
-                            if (last_result.type == VAL_SCALAR) {
-                                set_named_scalar(var_name, &last_result.v.scalar);
-                            } else {
-                                set_named_matrix(var_name, &last_result.v.matrix);
-                            }
-                        } else
-#endif
-                        {
-                            set_var_value(var_idx, &last_result);
-                        }
+                        set_var_value(var_idx, &last_result);
                         has_result = 1;
                     } else {
                         /* Not an assignment, restore and parse as expression */
@@ -1820,8 +1276,6 @@ int main(int argc, char *argv[])
                 }
                 
                 if (current_token.type == TOK_SEMI) {
-                    /* Semicolon suppresses output - MATLAB compatible */
-                    has_result = 0;
                     next_token();
                     if (current_token.type == TOK_END) {
                         done = 1;
@@ -1860,7 +1314,7 @@ int main(int argc, char *argv[])
 }
 
 /* Evaluate a single expression line (for command-line/pipe mode) */
-static int eval_expr_line(const char *line, int quiet)
+int eval_expr_line(const char *line, int quiet)
 {
     value_t result;
     static char buf[512];
@@ -1876,388 +1330,112 @@ static int eval_expr_line(const char *line, int quiet)
     input_ptr = line;
     next_token();
     
-    /* Handle empty line or comment-only line */
-    if (current_token.type == TOK_END) {
-        return 0;  /* Nothing to evaluate */
-    }
-    
     while (!done) {
         /* Handle multi-value assignment: [A,B,C] = func(x) */
         if (current_token.type == TOK_LBRACKET) {
-            char var_names[8][32];
-            int var_indices[8];
-            int num_vars = 0;
-            const char *saved_pos = input_ptr;
-            token_t saved_tok = current_token;
-            int is_multi_assign = 0;
-            
+            char mvnames[8][32]; int mvidx[8]; int mvnum = 0;
+            const char *mvsaved = input_ptr; token_t mvtok = current_token;
+            int ismv = 0;
             next_token();
-            
-            /* Parse variable names */
-            while (num_vars < 8 && current_token.type != TOK_RBRACKET && 
-                   current_token.type != TOK_END) {
-                if (current_token.type == TOK_FUNC) {
-                    strcpy(var_names[num_vars], current_token.func_name);
-                    var_names[num_vars][31] = '\0';
-                    var_indices[num_vars] = get_var_index(var_names[num_vars]);
-                    num_vars++;
-                } else if (current_token.type == TOK_IMAG) {
-                    strcpy(var_names[num_vars], "i");
-                    var_indices[num_vars] = get_var_index("i");
-                    num_vars++;
-                } else {
-                    break;
-                }
-                next_token();
-                if (current_token.type == TOK_COMMA) {
-                    next_token();
-                }
+            while (mvnum < 8 && current_token.type != TOK_RBRACKET && current_token.type != TOK_END) {
+                if (current_token.type == TOK_FUNC) { strcpy(mvnames[mvnum], current_token.func_name); mvidx[mvnum] = get_var_index(mvnames[mvnum]); mvnum++; }
+                else if (current_token.type == TOK_IMAG) { strcpy(mvnames[mvnum], "i"); mvidx[mvnum] = get_var_index("i"); mvnum++; }
+                else break;
+                next_token(); if (current_token.type == TOK_COMMA) next_token();
             }
-            
-            if (current_token.type == TOK_RBRACKET && num_vars > 0) {
+            if (current_token.type == TOK_RBRACKET && mvnum > 0) { next_token(); if (current_token.type == TOK_ASSIGN) ismv = 1; }
+            if (ismv) {
                 next_token();
-                if (current_token.type == TOK_ASSIGN) {
-                    is_multi_assign = 1;
-                }
-            }
-            
-            if (is_multi_assign) {
-                /* Parse the function call */
-                next_token();
-                
                 if (current_token.type == TOK_FUNC) {
-                    char func_name[32];
-                    strncpy(func_name, current_token.func_name, 31);
-                    func_name[31] = '\0';
-                    
-                    next_token();
+                    char fn[32]; strcpy(fn, current_token.func_name); next_token();
                     if (current_token.type == TOK_LPAREN) {
                         next_token();
-                        
-                        /* SVD: [U,S,V] = svd(A) */
-                        if (strcmp(func_name, "svd") == 0 && num_vars == 3) {
-                            value_t arg;
-                            matrix_t U, S, V;
-                            
-                            if (parse_value(&arg) && current_token.type == TOK_RPAREN) {
-                                next_token();
-                                if (arg.type != VAL_MATRIX) {
-                                    mat_zero(&arg.v.matrix, 1, 1);
-                                    MAT_AT(&arg.v.matrix, 0, 0) = arg.v.scalar;
-                                }
-                                
+                        if (strcmp(fn, "svd") == 0 && mvnum == 3) {
+                            value_t arg; matrix_t U, S, V;
+                            if (parse_value(&arg) && current_token.type == TOK_RPAREN) { next_token();
+                                if (arg.type != VAL_MATRIX) { mat_zero(&arg.v.matrix, 1, 1); MAT_AT(&arg.v.matrix, 0, 0) = arg.v.scalar; }
                                 if (mat_svd(&U, &S, &V, &arg.v.matrix)) {
-                                    value_t v;
-                                    v.type = VAL_MATRIX;
-                                    
-                                    mat_copy(&v.v.matrix, &U);
-                                    if (var_indices[0] >= 0) set_var_value(var_indices[0], &v);
-#ifdef HAVE_NAMED_VARS
-                                    else set_named_matrix(var_names[0], &v.v.matrix);
-#endif
-                                    
-                                    mat_copy(&v.v.matrix, &S);
-                                    if (var_indices[1] >= 0) set_var_value(var_indices[1], &v);
-#ifdef HAVE_NAMED_VARS
-                                    else set_named_matrix(var_names[1], &v.v.matrix);
-#endif
-                                    
-                                    mat_copy(&v.v.matrix, &V);
-                                    if (var_indices[2] >= 0) set_var_value(var_indices[2], &v);
-#ifdef HAVE_NAMED_VARS
-                                    else set_named_matrix(var_names[2], &v.v.matrix);
-#endif
-                                    
-                                    result.type = VAL_MATRIX;
-                                    mat_copy(&result.v.matrix, &U);
-                                    has_result = 0;  /* Don't print */
-                                } else {
-                                    printf("Error: SVD failed\n");
-                                    done = 1;
-                                }
-                            } else {
-                                printf("Error: svd requires matrix argument\n");
-                                done = 1;
-                            }
-                        }
-                        /* QR: [Q,R] = qr(A) */
-                        else if (strcmp(func_name, "qr") == 0 && num_vars == 2) {
-                            value_t arg;
-                            matrix_t Q, R;
-                            
-                            if (parse_value(&arg) && current_token.type == TOK_RPAREN) {
-                                next_token();
-                                if (arg.type != VAL_MATRIX) {
-                                    mat_zero(&arg.v.matrix, 1, 1);
-                                    MAT_AT(&arg.v.matrix, 0, 0) = arg.v.scalar;
-                                }
-                                
+                                    value_t v; v.type = VAL_MATRIX;
+                                    mat_copy(&v.v.matrix, &U); if (mvidx[0] >= 0) set_var_value(mvidx[0], &v); else set_named_matrix(mvnames[0], &v.v.matrix);
+                                    mat_copy(&v.v.matrix, &S); if (mvidx[1] >= 0) set_var_value(mvidx[1], &v); else set_named_matrix(mvnames[1], &v.v.matrix);
+                                    mat_copy(&v.v.matrix, &V); if (mvidx[2] >= 0) set_var_value(mvidx[2], &v); else set_named_matrix(mvnames[2], &v.v.matrix);
+                                    has_result = 0;
+                                } else { printf("Error: SVD failed\n"); done = 1; }
+                            } else { printf("Error: svd syntax\n"); done = 1; }
+                        } else if (strcmp(fn, "qr") == 0 && mvnum == 2) {
+                            value_t arg; matrix_t Q, R;
+                            if (parse_value(&arg) && current_token.type == TOK_RPAREN) { next_token();
+                                if (arg.type != VAL_MATRIX) { mat_zero(&arg.v.matrix, 1, 1); MAT_AT(&arg.v.matrix, 0, 0) = arg.v.scalar; }
                                 if (mat_qr(&Q, &R, &arg.v.matrix)) {
-                                    value_t v;
-                                    v.type = VAL_MATRIX;
-                                    
-                                    mat_copy(&v.v.matrix, &Q);
-                                    if (var_indices[0] >= 0) set_var_value(var_indices[0], &v);
-#ifdef HAVE_NAMED_VARS
-                                    else set_named_matrix(var_names[0], &v.v.matrix);
-#endif
-                                    
-                                    mat_copy(&v.v.matrix, &R);
-                                    if (var_indices[1] >= 0) set_var_value(var_indices[1], &v);
-#ifdef HAVE_NAMED_VARS
-                                    else set_named_matrix(var_names[1], &v.v.matrix);
-#endif
-                                    
-                                    result.type = VAL_MATRIX;
-                                    mat_copy(&result.v.matrix, &Q);
+                                    value_t v; v.type = VAL_MATRIX;
+                                    mat_copy(&v.v.matrix, &Q); if (mvidx[0] >= 0) set_var_value(mvidx[0], &v); else set_named_matrix(mvnames[0], &v.v.matrix);
+                                    mat_copy(&v.v.matrix, &R); if (mvidx[1] >= 0) set_var_value(mvidx[1], &v); else set_named_matrix(mvnames[1], &v.v.matrix);
                                     has_result = 0;
-                                } else {
-                                    printf("Error: QR decomposition failed\n");
-                                    done = 1;
-                                }
-                            } else {
-                                printf("Error: qr requires matrix argument\n");
-                                done = 1;
-                            }
-                        }
-                        /* LU: [L,U] = lu(A) or [L,U,P] = lu(A) */
-                        else if (strcmp(func_name, "lu") == 0 && (num_vars == 2 || num_vars == 3)) {
-                            value_t arg;
-                            matrix_t L, U_mat;
-                            int perm[MAT_MAX_ROWS];
-                            
-                            if (parse_value(&arg) && current_token.type == TOK_RPAREN) {
-                                next_token();
-                                if (arg.type != VAL_MATRIX) {
-                                    mat_zero(&arg.v.matrix, 1, 1);
-                                    MAT_AT(&arg.v.matrix, 0, 0) = arg.v.scalar;
-                                }
-                                
-                                if (mat_lu(&L, &U_mat, perm, &arg.v.matrix)) {
-                                    value_t v;
-                                    v.type = VAL_MATRIX;
-                                    
-                                    mat_copy(&v.v.matrix, &L);
-                                    if (var_indices[0] >= 0) set_var_value(var_indices[0], &v);
-#ifdef HAVE_NAMED_VARS
-                                    else set_named_matrix(var_names[0], &v.v.matrix);
-#endif
-                                    
-                                    mat_copy(&v.v.matrix, &U_mat);
-                                    if (var_indices[1] >= 0) set_var_value(var_indices[1], &v);
-#ifdef HAVE_NAMED_VARS
-                                    else set_named_matrix(var_names[1], &v.v.matrix);
-#endif
-                                    
-                                    if (num_vars == 3) {
-                                        /* Create permutation matrix */
-                                        int i, n = arg.v.matrix.rows;
-                                        mat_zero(&v.v.matrix, n, n);
-                                        for (i = 0; i < n; i++) {
-                                            apf_from_int(&MAT_AT(&v.v.matrix, i, perm[i]).re, 1);
-                                        }
-                                        if (var_indices[2] >= 0) set_var_value(var_indices[2], &v);
-#ifdef HAVE_NAMED_VARS
-                                        else set_named_matrix(var_names[2], &v.v.matrix);
-#endif
-                                    }
-                                    
-                                    result.type = VAL_MATRIX;
-                                    mat_copy(&result.v.matrix, &L);
+                                } else { printf("Error: QR failed\n"); done = 1; }
+                            } else { printf("Error: qr syntax\n"); done = 1; }
+                        } else if (strcmp(fn, "lu") == 0 && mvnum >= 2) {
+                            value_t arg; matrix_t L, Um; int perm[MAT_MAX_ROWS];
+                            if (parse_value(&arg) && current_token.type == TOK_RPAREN) { next_token();
+                                if (arg.type != VAL_MATRIX) { mat_zero(&arg.v.matrix, 1, 1); MAT_AT(&arg.v.matrix, 0, 0) = arg.v.scalar; }
+                                if (mat_lu(&L, &Um, perm, &arg.v.matrix)) {
+                                    value_t v; int ii; v.type = VAL_MATRIX;
+                                    mat_copy(&v.v.matrix, &L); if (mvidx[0] >= 0) set_var_value(mvidx[0], &v); else set_named_matrix(mvnames[0], &v.v.matrix);
+                                    mat_copy(&v.v.matrix, &Um); if (mvidx[1] >= 0) set_var_value(mvidx[1], &v); else set_named_matrix(mvnames[1], &v.v.matrix);
+                                    if (mvnum == 3) { int nn = arg.v.matrix.rows; mat_zero(&v.v.matrix, nn, nn);
+                                        for (ii = 0; ii < nn; ii++) apf_from_int(&MAT_AT(&v.v.matrix, ii, perm[ii]).re, 1);
+                                        if (mvidx[2] >= 0) set_var_value(mvidx[2], &v); else set_named_matrix(mvnames[2], &v.v.matrix); }
                                     has_result = 0;
-                                } else {
-                                    printf("Error: LU decomposition failed\n");
-                                    done = 1;
-                                }
-                            } else {
-                                printf("Error: lu requires matrix argument\n");
-                                done = 1;
-                            }
-                        }
-                        /* Schur: [Q,T] = schur(A) */
-                        else if (strcmp(func_name, "schur") == 0 && num_vars == 2) {
-                            value_t arg;
-                            matrix_t Q, T;
-                            
-                            if (parse_value(&arg) && current_token.type == TOK_RPAREN) {
-                                next_token();
-                                if (arg.type != VAL_MATRIX) {
-                                    mat_zero(&arg.v.matrix, 1, 1);
-                                    MAT_AT(&arg.v.matrix, 0, 0) = arg.v.scalar;
-                                }
-                                
-                                if (mat_schur(&Q, &T, &arg.v.matrix)) {
-                                    value_t v;
-                                    v.type = VAL_MATRIX;
-                                    
-                                    mat_copy(&v.v.matrix, &Q);
-                                    if (var_indices[0] >= 0) set_var_value(var_indices[0], &v);
-#ifdef HAVE_NAMED_VARS
-                                    else set_named_matrix(var_names[0], &v.v.matrix);
-#endif
-                                    
-                                    mat_copy(&v.v.matrix, &T);
-                                    if (var_indices[1] >= 0) set_var_value(var_indices[1], &v);
-#ifdef HAVE_NAMED_VARS
-                                    else set_named_matrix(var_names[1], &v.v.matrix);
-#endif
-                                    
-                                    result.type = VAL_MATRIX;
-                                    mat_copy(&result.v.matrix, &Q);
+                                } else { printf("Error: LU failed\n"); done = 1; }
+                            } else { printf("Error: lu syntax\n"); done = 1; }
+                        } else if (strcmp(fn, "pca") == 0 && mvnum == 3) {
+                            value_t arg; matrix_t coeff, score, latent;
+                            if (parse_value(&arg) && current_token.type == TOK_RPAREN) { next_token();
+                                if (arg.type != VAL_MATRIX) { printf("Error: pca requires matrix\n"); done = 1; }
+                                else if (mat_pca(&coeff, &score, &latent, &arg.v.matrix)) {
+                                    value_t v; v.type = VAL_MATRIX;
+                                    mat_copy(&v.v.matrix, &coeff); if (mvidx[0] >= 0) set_var_value(mvidx[0], &v); else set_named_matrix(mvnames[0], &v.v.matrix);
+                                    mat_copy(&v.v.matrix, &score); if (mvidx[1] >= 0) set_var_value(mvidx[1], &v); else set_named_matrix(mvnames[1], &v.v.matrix);
+                                    mat_copy(&v.v.matrix, &latent); if (mvidx[2] >= 0) set_var_value(mvidx[2], &v); else set_named_matrix(mvnames[2], &v.v.matrix);
                                     has_result = 0;
-                                } else {
-                                    printf("Error: Schur decomposition failed\n");
-                                    done = 1;
-                                }
-                            } else {
-                                printf("Error: schur requires matrix argument\n");
-                                done = 1;
-                            }
-                        }
-                        /* Cholesky: [L] = chol(A) - just for completeness */
-                        else if (strcmp(func_name, "chol") == 0 && num_vars == 1) {
-                            value_t arg;
-                            matrix_t L;
-                            
-                            if (parse_value(&arg) && current_token.type == TOK_RPAREN) {
-                                next_token();
-                                if (arg.type != VAL_MATRIX) {
-                                    mat_zero(&arg.v.matrix, 1, 1);
-                                    MAT_AT(&arg.v.matrix, 0, 0) = arg.v.scalar;
-                                }
-                                
-                                if (mat_chol(&L, &arg.v.matrix)) {
-                                    value_t v;
-                                    v.type = VAL_MATRIX;
-                                    
-                                    mat_copy(&v.v.matrix, &L);
-                                    if (var_indices[0] >= 0) set_var_value(var_indices[0], &v);
-#ifdef HAVE_NAMED_VARS
-                                    else set_named_matrix(var_names[0], &v.v.matrix);
-#endif
-                                    
-                                    result.type = VAL_MATRIX;
-                                    mat_copy(&result.v.matrix, &L);
-                                    has_result = 0;
-                                } else {
-                                    printf("Error: Cholesky decomposition failed\n");
-                                    done = 1;
-                                }
-                            } else {
-                                printf("Error: chol requires matrix argument\n");
-                                done = 1;
-                            }
-                        }
-                        /* Eigenvalues: [V,D] = eig(A) */
-                        else if (strcmp(func_name, "eig") == 0 && num_vars == 2) {
-                            value_t arg;
-                            matrix_t eigenvalues;
-                            
-                            if (parse_value(&arg) && current_token.type == TOK_RPAREN) {
-                                next_token();
-                                if (arg.type != VAL_MATRIX) {
-                                    mat_zero(&arg.v.matrix, 1, 1);
-                                    MAT_AT(&arg.v.matrix, 0, 0) = arg.v.scalar;
-                                }
-                                
-                                if (mat_eig(&eigenvalues, &arg.v.matrix)) {
-                                    value_t v;
-                                    int i, n = eigenvalues.rows;
-                                    matrix_t D;
-                                    
-                                    /* V = identity (simplified - real eigenvectors need more work) */
-                                    v.type = VAL_MATRIX;
-                                    mat_identity(&v.v.matrix, n);
-                                    if (var_indices[0] >= 0) set_var_value(var_indices[0], &v);
-#ifdef HAVE_NAMED_VARS
-                                    else set_named_matrix(var_names[0], &v.v.matrix);
-#endif
-                                    
-                                    /* D = diagonal matrix of eigenvalues */
-                                    mat_zero(&D, n, n);
-                                    for (i = 0; i < n; i++) {
-                                        MAT_AT(&D, i, i) = MAT_AT(&eigenvalues, i, 0);
-                                    }
-                                    mat_copy(&v.v.matrix, &D);
-                                    if (var_indices[1] >= 0) set_var_value(var_indices[1], &v);
-#ifdef HAVE_NAMED_VARS
-                                    else set_named_matrix(var_names[1], &v.v.matrix);
-#endif
-                                    
-                                    result.type = VAL_MATRIX;
-                                    mat_identity(&result.v.matrix, n);
-                                    has_result = 0;
-                                } else {
-                                    printf("Error: eigenvalue decomposition failed\n");
-                                    done = 1;
-                                }
-                            } else {
-                                printf("Error: eig requires matrix argument\n");
-                                done = 1;
-                            }
-                        }
-                        else {
-                            printf("Error: unknown multi-return function '%s' with %d outputs\n", 
-                                   func_name, num_vars);
-                            done = 1;
-                        }
-                    } else {
-                        printf("Error: expected '(' after function name\n");
-                        done = 1;
-                    }
-                } else {
-                    printf("Error: expected function call after [vars] =\n");
-                    done = 1;
-                }
-                
-                /* Handle end of expression */
-                if (!done) {
-                    if (current_token.type == TOK_SEMI) {
-                        next_token();
-                        if (current_token.type == TOK_END) done = 1;
-                    } else if (current_token.type == TOK_END) {
-                        done = 1;
-                    }
-                }
+                                } else { printf("Error: PCA failed\n"); done = 1; }
+                            } else { printf("Error: pca syntax\n"); done = 1; }
+                        } else if (strcmp(fn, "kmeans") == 0 && mvnum == 2) {
+                            value_t arg, karg; matrix_t idx_m, cent; int k;
+                            if (parse_value(&arg) && current_token.type == TOK_COMMA) { next_token();
+                                if (parse_value(&karg) && current_token.type == TOK_RPAREN) { next_token();
+                                    if (arg.type != VAL_MATRIX) { printf("Error: kmeans requires matrix\n"); done = 1; }
+                                    else { k = (karg.type == VAL_SCALAR) ? apf_to_long(&karg.v.scalar.re) : 2;
+                                        if (mat_kmeans(&idx_m, &cent, &arg.v.matrix, k)) {
+                                            value_t v; v.type = VAL_MATRIX;
+                                            mat_copy(&v.v.matrix, &idx_m); if (mvidx[0] >= 0) set_var_value(mvidx[0], &v); else set_named_matrix(mvnames[0], &v.v.matrix);
+                                            mat_copy(&v.v.matrix, &cent); if (mvidx[1] >= 0) set_var_value(mvidx[1], &v); else set_named_matrix(mvnames[1], &v.v.matrix);
+                                            has_result = 0;
+                                        } else { printf("Error: kmeans failed\n"); done = 1; } }
+                                } else { printf("Error: kmeans(X,k) syntax\n"); done = 1; }
+                            } else { printf("Error: kmeans(X,k) syntax\n"); done = 1; }
+                        } else { printf("Error: unknown [a,b]=func '%s' with %d outputs\n", fn, mvnum); done = 1; }
+                    } else { printf("Error: expected '('\n"); done = 1; }
+                } else { printf("Error: expected function\n"); done = 1; }
+                if (!done) { if (current_token.type == TOK_SEMI) { next_token(); if (current_token.type == TOK_END) done = 1; } else if (current_token.type == TOK_END) done = 1; }
                 continue;
-            } else {
-                /* Not multi-assign, restore position and try normal parsing */
-                input_ptr = saved_pos;
-                current_token = saved_tok;
-            }
+            } else { input_ptr = mvsaved; current_token = mvtok; }
         }
-        
         /* Handle variable assignment */
         if (current_token.type == TOK_FUNC || current_token.type == TOK_IMAG) {
-            char var_name[32];
+            char var_name[16];
             int var_idx;
             const char *saved_pos = input_ptr;
             token_t saved_tok = current_token;
-#ifdef HAVE_NAMED_VARS
-            int is_named = 0;
-#endif
             
             if (current_token.type == TOK_IMAG) {
                 strcpy(var_name, "i");
             } else {
-                strncpy(var_name, current_token.func_name, sizeof(var_name)-1);
-                var_name[sizeof(var_name)-1] = '\0';
+                strcpy(var_name, current_token.func_name);
             }
             var_idx = get_var_index(var_name);
             
-#ifdef HAVE_NAMED_VARS
-            /* Check if it's a multi-character name */
-            if (var_idx < 0 && strlen(var_name) > 1) {
-                is_named = 1;
-            }
-#endif
-            
             next_token();
-            if ((var_idx >= 0
-#ifdef HAVE_NAMED_VARS
-                 || is_named
-#endif
-                ) && current_token.type == TOK_ASSIGN) {
+            if (var_idx >= 0 && current_token.type == TOK_ASSIGN) {
                 next_token();
                 if (current_token.type == TOK_END || current_token.type == TOK_SEMI) {
                     printf("Error: expected expression after =\n");
@@ -2269,18 +1447,7 @@ static int eval_expr_line(const char *line, int quiet)
                     done = 1;
                     continue;
                 }
-#ifdef HAVE_NAMED_VARS
-                if (is_named) {
-                    if (result.type == VAL_SCALAR) {
-                        set_named_scalar(var_name, &result.v.scalar);
-                    } else {
-                        set_named_matrix(var_name, &result.v.matrix);
-                    }
-                } else
-#endif
-                {
-                    set_var_value(var_idx, &result);
-                }
+                set_var_value(var_idx, &result);
                 has_result = 1;
             } else {
                 int leading_not = 0;
@@ -2609,8 +1776,6 @@ static int eval_expr_line(const char *line, int quiet)
         }
         
         if (current_token.type == TOK_SEMI) {
-            /* Semicolon suppresses output - MATLAB compatible */
-            has_result = 0;  /* Suppress output */
             next_token();
             if (current_token.type == TOK_END) {
                 done = 1;

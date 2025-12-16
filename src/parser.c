@@ -4342,6 +4342,155 @@ static int parse_value_factor(value_t *result)
                 return 1;
             }
             
+            /* PCA: pca(X) returns scores (projected data) */
+            if (str_eq(name, "pca")) {
+                matrix_t coeff, score, latent;
+                
+                next_token();
+                if (!parse_value(&pv_arg)) return 0;
+                if (current_token.type != TOK_RPAREN) {
+                    printf("Error: expected ')'\n");
+                    return 0;
+                }
+                next_token();
+                
+                if (pv_arg.type != VAL_MATRIX) {
+                    printf("Error: pca requires matrix argument\n");
+                    return 0;
+                }
+                
+                if (!mat_pca(&coeff, &score, &latent, &pv_arg.v.matrix)) {
+                    printf("Error: PCA failed\n");
+                    return 0;
+                }
+                
+                mat_copy(&result->v.matrix, &score);
+                result->type = VAL_MATRIX;
+                return 1;
+            }
+            
+            /* PCA reduce: pcareduce(X, k) */
+            if (str_eq(name, "pcareduce")) {
+                value_t k_arg;
+                int k;
+                
+                next_token();
+                if (!parse_value(&pv_arg)) return 0;
+                if (current_token.type != TOK_COMMA) {
+                    printf("Error: expected ',' in pcareduce(X, k)\n");
+                    return 0;
+                }
+                next_token();
+                if (!parse_value(&k_arg)) return 0;
+                if (current_token.type != TOK_RPAREN) {
+                    printf("Error: expected ')'\n");
+                    return 0;
+                }
+                next_token();
+                
+                if (pv_arg.type != VAL_MATRIX) {
+                    printf("Error: pcareduce requires matrix argument\n");
+                    return 0;
+                }
+                
+                k = (k_arg.type == VAL_SCALAR) ? apf_to_long(&k_arg.v.scalar.re) : 2;
+                
+                if (!mat_pca_reduce(&result->v.matrix, &pv_arg.v.matrix, k)) {
+                    printf("Error: PCA reduce failed\n");
+                    return 0;
+                }
+                result->type = VAL_MATRIX;
+                return 1;
+            }
+            
+            /* K-means: kmeans(X, k) returns cluster indices */
+            if (str_eq(name, "kmeans")) {
+                value_t k_arg;
+                matrix_t idx, centroids;
+                int k;
+                
+                next_token();
+                if (!parse_value(&pv_arg)) return 0;
+                if (current_token.type != TOK_COMMA) {
+                    printf("Error: expected ',' in kmeans(X, k)\n");
+                    return 0;
+                }
+                next_token();
+                if (!parse_value(&k_arg)) return 0;
+                if (current_token.type != TOK_RPAREN) {
+                    printf("Error: expected ')'\n");
+                    return 0;
+                }
+                next_token();
+                
+                if (pv_arg.type != VAL_MATRIX) {
+                    printf("Error: kmeans requires matrix argument\n");
+                    return 0;
+                }
+                
+                k = (k_arg.type == VAL_SCALAR) ? apf_to_long(&k_arg.v.scalar.re) : 2;
+                
+                if (!mat_kmeans(&idx, &centroids, &pv_arg.v.matrix, k)) {
+                    printf("Error: kmeans failed\n");
+                    return 0;
+                }
+                
+                mat_copy(&result->v.matrix, &idx);
+                result->type = VAL_MATRIX;
+                return 1;
+            }
+            
+            /* Pairwise distance: pdist(X) */
+            if (str_eq(name, "pdist")) {
+                next_token();
+                if (!parse_value(&pv_arg)) return 0;
+                if (current_token.type != TOK_RPAREN) {
+                    printf("Error: expected ')'\n");
+                    return 0;
+                }
+                next_token();
+                
+                if (pv_arg.type != VAL_MATRIX) {
+                    printf("Error: pdist requires matrix argument\n");
+                    return 0;
+                }
+                
+                if (!mat_pdist(&result->v.matrix, &pv_arg.v.matrix)) {
+                    printf("Error: pdist failed\n");
+                    return 0;
+                }
+                result->type = VAL_MATRIX;
+                return 1;
+            }
+            
+            /* Silhouette score: silhouette(X, idx) */
+            if (str_eq(name, "silhouette")) {
+                value_t idx_arg;
+                
+                next_token();
+                if (!parse_value(&pv_arg)) return 0;
+                if (current_token.type != TOK_COMMA) {
+                    printf("Error: expected ',' in silhouette(X, idx)\n");
+                    return 0;
+                }
+                next_token();
+                if (!parse_value(&idx_arg)) return 0;
+                if (current_token.type != TOK_RPAREN) {
+                    printf("Error: expected ')'\n");
+                    return 0;
+                }
+                next_token();
+                
+                if (pv_arg.type != VAL_MATRIX || idx_arg.type != VAL_MATRIX) {
+                    printf("Error: silhouette requires matrix arguments\n");
+                    return 0;
+                }
+                
+                mat_silhouette(&result->v.scalar, &pv_arg.v.matrix, &idx_arg.v.matrix);
+                result->type = VAL_SCALAR;
+                return 1;
+            }
+            
             /* Array manipulation functions that return matrices */
             if (str_eq(name, "fliplr") || str_eq(name, "flipud") || str_eq(name, "flip") ||
                 str_eq(name, "sort") || str_eq(name, "cumsum") || str_eq(name, "cumprod") ||
