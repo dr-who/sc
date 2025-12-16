@@ -6,6 +6,7 @@
 #include "mathx.h"
 #include "apf.h"
 #include "apfx.h"
+#include "sc.h"  /* For angle_mode */
 
 /* ========== Combinatorics ========== */
 #ifdef HAVE_COMB
@@ -175,3 +176,142 @@ void apf_lsr(apf *r, const apf *a, int bits) {
 }
 
 #endif /* HAVE_BITWISE */
+
+/* ========== Angle Mode Conversions ========== */
+
+/* pi/180 for deg->rad conversion */
+static void get_deg_to_rad_factor(apf *r) {
+    apf pi, d180;
+    apfx_pi(&pi);
+    apf_from_int(&d180, 180);
+    apf_div(r, &pi, &d180);
+}
+
+/* 180/pi for rad->deg conversion */
+static void get_rad_to_deg_factor(apf *r) {
+    apf pi, d180;
+    apfx_pi(&pi);
+    apf_from_int(&d180, 180);
+    apf_div(r, &d180, &pi);
+}
+
+/* pi/200 for grad->rad conversion */
+static void get_grad_to_rad_factor(apf *r) {
+    apf pi, d200;
+    apfx_pi(&pi);
+    apf_from_int(&d200, 200);
+    apf_div(r, &pi, &d200);
+}
+
+/* 200/pi for rad->grad conversion */
+static void get_rad_to_grad_factor(apf *r) {
+    apf pi, d200;
+    apfx_pi(&pi);
+    apf_from_int(&d200, 200);
+    apf_div(r, &d200, &pi);
+}
+
+void deg_to_rad(apf *r, const apf *deg) {
+    apf factor;
+    get_deg_to_rad_factor(&factor);
+    apf_mul(r, deg, &factor);
+}
+
+void rad_to_deg(apf *r, const apf *rad) {
+    apf factor;
+    get_rad_to_deg_factor(&factor);
+    apf_mul(r, rad, &factor);
+}
+
+void grad_to_rad(apf *r, const apf *grad) {
+    apf factor;
+    get_grad_to_rad_factor(&factor);
+    apf_mul(r, grad, &factor);
+}
+
+void rad_to_grad(apf *r, const apf *rad) {
+    apf factor;
+    get_rad_to_grad_factor(&factor);
+    apf_mul(r, rad, &factor);
+}
+
+/* Convert angle to radians based on mode (0=rad, 1=deg, 2=grad) */
+void angle_to_rad(apf *r, const apf *angle, int mode) {
+    switch (mode) {
+        case 1: deg_to_rad(r, angle); break;
+        case 2: grad_to_rad(r, angle); break;
+        default: apf_copy(r, angle); break;
+    }
+}
+
+/* Convert radians to angle based on mode */
+void rad_to_angle(apf *r, const apf *rad, int mode) {
+    switch (mode) {
+        case 1: rad_to_deg(r, rad); break;
+        case 2: rad_to_grad(r, rad); break;
+        default: apf_copy(r, rad); break;
+    }
+}
+
+/* ========== Reciprocal Trig Functions ========== */
+
+void apfx_sec(apf *r, const apf *x) {
+    apf cos_x, one;
+    apfx_cos(&cos_x, x);
+    apf_from_int(&one, 1);
+    apf_div(r, &one, &cos_x);
+}
+
+void apfx_csc(apf *r, const apf *x) {
+    apf sin_x, one;
+    apfx_sin(&sin_x, x);
+    apf_from_int(&one, 1);
+    apf_div(r, &one, &sin_x);
+}
+
+void apfx_cot(apf *r, const apf *x) {
+    apf tan_x, one;
+    apfx_tan(&tan_x, x);
+    apf_from_int(&one, 1);
+    apf_div(r, &one, &tan_x);
+}
+
+void apfx_asec(apf *r, const apf *x) {
+    /* arcsec(x) = acos(1/x) */
+    apf inv, one;
+    apf_from_int(&one, 1);
+    apf_div(&inv, &one, x);
+    apfx_acos(r, &inv);
+}
+
+void apfx_acsc(apf *r, const apf *x) {
+    /* arccsc(x) = asin(1/x) */
+    apf inv, one;
+    apf_from_int(&one, 1);
+    apf_div(&inv, &one, x);
+    apfx_asin(r, &inv);
+}
+
+void apfx_acot(apf *r, const apf *x) {
+    /* arccot(x) = atan(1/x) for x > 0, pi + atan(1/x) for x < 0 */
+    apf inv, one;
+    apf_from_int(&one, 1);
+    apf_div(&inv, &one, x);
+    apfx_atan(r, &inv);
+    /* Adjust for negative x */
+    if (x->sign && !apf_is_zero(x)) {
+        apf pi;
+        apfx_pi(&pi);
+        apf_add(r, r, &pi);
+    }
+}
+
+/* ========== Log with Arbitrary Base ========== */
+
+void apfx_logb(apf *r, const apf *x, const apf *base) {
+    /* log_b(x) = ln(x) / ln(b) */
+    apf log_x, log_base;
+    apfx_log(&log_x, x);
+    apfx_log(&log_base, base);
+    apf_div(r, &log_x, &log_base);
+}

@@ -65,4 +65,28 @@ void apf_lsr(apf *r, const apf *a, int bits);
 
 #endif /* HAVE_BITWISE */
 
+/* ========== Angle Mode Conversions ========== */
+/* Convert angle to radians based on current mode */
+void angle_to_rad(apf *r, const apf *angle, int mode);
+
+/* Convert radians to angle based on current mode */
+void rad_to_angle(apf *r, const apf *rad, int mode);
+
+/* Degree/radian/gradian conversions */
+void deg_to_rad(apf *r, const apf *deg);
+void rad_to_deg(apf *r, const apf *rad);
+void grad_to_rad(apf *r, const apf *grad);
+void rad_to_grad(apf *r, const apf *rad);
+
+/* Reciprocal trig functions */
+void apfx_sec(apf *r, const apf *x);   /* sec(x) = 1/cos(x) */
+void apfx_csc(apf *r, const apf *x);   /* csc(x) = 1/sin(x) */
+void apfx_cot(apf *r, const apf *x);   /* cot(x) = 1/tan(x) */
+void apfx_asec(apf *r, const apf *x);  /* arcsec(x) = acos(1/x) */
+void apfx_acsc(apf *r, const apf *x);  /* arccsc(x) = asin(1/x) */
+void apfx_acot(apf *r, const apf *x);  /* arccot(x) = atan(1/x) */
+
+/* Log with arbitrary base */
+void apfx_logb(apf *r, const apf *x, const apf *base);
+
 #endif /* MATHX_H */

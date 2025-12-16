@@ -419,6 +419,46 @@ void mat_std(apfc *r, const matrix_t *m)
     apfc_sqrt(r, &variance);
 }
 
+/* ========== Variance ========== */
+
+void mat_var(apfc *r, const matrix_t *m)
+{
+    int i;
+    int n;
+    apfc mean_val;
+    apfc sum_sq;
+    apfc diff;
+    apfc sq;
+    apfc count;
+    apfc tmp;
+    
+    n = m->rows * m->cols;
+    if (n <= 1) {
+        apf_zero(&r->re);
+        apf_zero(&r->im);
+        return;
+    }
+    
+    /* Calculate mean */
+    mat_mean(&mean_val, m);
+    
+    /* Calculate sum of squared differences */
+    apf_zero(&sum_sq.re);
+    apf_zero(&sum_sq.im);
+    
+    for (i = 0; i < n; i++) {
+        apfc_sub(&diff, &m->data[i], &mean_val);
+        apfc_mul(&sq, &diff, &diff);
+        apfc_add(&tmp, &sum_sq, &sq);
+        sum_sq = tmp;
+    }
+    
+    /* Divide by n-1 (sample variance) */
+    apf_from_int(&count.re, n - 1);
+    apf_zero(&count.im);
+    apfc_div(r, &sum_sq, &count);
+}
+
 /* ========== Median ========== */
 
 /* Simple bubble sort for small arrays - sorts by real part */

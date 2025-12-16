@@ -25,7 +25,7 @@ test_ieee() {
     local expected="$3"
     local exact="${4:-0}"
     
-    local result=$(echo "$expr" | $SC 2>&1 | grep "= " | tail -1)
+    local result=$(echo "$expr" | $SC 2>&1 | tail -1)
     local value="${result#*= }"
     
     local passed=0

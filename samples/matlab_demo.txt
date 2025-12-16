@@ -1,0 +1,192 @@
+% MATLAB-Compatible Features Demo
+% ================================
+% This file demonstrates 40+ MATLAB-compatible functions in sc
+
+% ===========================================
+% MATRIX PREDICATES
+% ===========================================
+
+% isrow - check if row vector
+isrow([1 2 3])           % true
+isrow([1; 2; 3])         % false
+
+% iscolumn - check if column vector
+iscolumn([1; 2; 3])      % true
+iscolumn([1 2 3])        % false
+
+% issquare - check if square matrix
+issquare([1 2; 3 4])     % true
+issquare([1 2 3])        % false
+
+% issymmetric - check if M == M'
+issymmetric([1 2; 2 1])  % true
+issymmetric([1 2; 3 4])  % false
+
+% isdiag - check if diagonal matrix
+isdiag(eye(3))           % true
+isdiag([1 2; 3 4])       % false
+
+% istriu/istril - check triangular
+istriu([1 2; 0 3])       % true (upper triangular)
+istril([1 0; 2 3])       % true (lower triangular)
+
+% issorted - check if sorted ascending
+issorted([1 2 3 4 5])    % true
+issorted([5 4 3 2 1])    % false
+
+% ndims - number of dimensions (always 2)
+ndims([1 2; 3 4])        % 2
+
+% ===========================================
+% MATRIX MANIPULATION
+% ===========================================
+
+% triu/tril - extract triangular parts
+A = [1 2 3; 4 5 6; 7 8 9]
+triu(A)                  % Upper triangular
+tril(A)                  % Lower triangular
+
+% horzcat/vertcat - concatenation
+horzcat([1 2], [3 4])    % [1 2 3 4]
+vertcat([1 2], [3 4])    % [1 2; 3 4]
+
+% squeeze - remove singleton dimensions
+squeeze([1 2 3])         % Same as input
+
+% zscore - z-score normalization
+zscore([1 2 3 4 5])      % Mean=0, std=1
+
+% sortrows - sort matrix by first column
+sortrows([3 1; 1 2; 2 3])  % Sorted by first col
+
+% ===========================================
+% SET OPERATIONS
+% ===========================================
+
+% union - set union
+union([1 2 3], [2 3 4])      % [1 2 3 4]
+
+% intersect - set intersection  
+intersect([1 2 3], [2 3 4])  % [2 3]
+
+% setdiff - set difference
+setdiff([1 2 3], [2])        % [1 3]
+
+% setxor - symmetric difference
+setxor([1 2 3], [2 3 4])     % [1 4]
+
+% ===========================================
+% SORTING AND SELECTION
+% ===========================================
+
+% maxk/mink - top k elements
+maxk([1 5 3 8 2], 3)     % [8 5 3]
+mink([1 5 3 8 2], 3)     % [1 2 3]
+
+% ===========================================
+% STATISTICS
+% ===========================================
+
+% range - max minus min
+range([1 5 3 8 2])       % 7
+
+% iqr - interquartile range
+iqr([1 2 3 4 5 6 7 8])   % 3.5
+
+% prctile - percentile
+prctile([1 2 3 4 5], 50) % 3 (median)
+prctile([1 2 3 4 5], 25) % 2
+
+% cov - covariance (variance for vector)
+cov([1 2 3 4 5])         % 2.5
+
+% ===========================================
+% TRIG IN DEGREES
+% ===========================================
+
+% secd, cscd, cotd - reciprocal trig
+secd(60)                 % 2
+cotd(45)                 % 1
+
+% asecd, acscd, acotd - inverse reciprocal
+asecd(2)                 % 60
+acotd(1)                 % 45
+
+% ===========================================
+% REAL-ONLY FUNCTIONS
+% ===========================================
+
+% nthroot - real nth root
+nthroot(8, 3)            % 2
+nthroot(-27, 3)          % -3 (preserves sign)
+
+% realsqrt - error if negative
+realsqrt(4)              % 2
+
+% reallog - error if non-positive
+reallog(e)               % 1
+
+% realpow - error if complex result
+realpow(2, 3)            % 8
+
+% ===========================================
+% EXAMPLE: Linear Algebra Workflow
+% ===========================================
+
+% Create test matrices
+A = [4 2; 1 3]
+B = eye(2)
+
+% Check properties
+issquare(A)              % true
+issymmetric(A)           % false
+isdiag(B)                % true
+
+% Matrix operations
+det(A)                   % 10
+trace(A)                 % 7
+eig(A)                   % eigenvalues
+
+% Triangular decomposition (manual)
+triu(A)                  % Upper part
+tril(A)                  % Lower part
+
+% ===========================================
+% EXAMPLE: Statistical Analysis
+% ===========================================
+
+data = [23 45 67 89 12 34 56 78 90 11]
+
+% Basic stats
+mean(data)               % Mean
+std(data)                % Standard deviation
+median(data)             % Median
+
+% Range analysis
+range(data)              % Max - min
+iqr(data)                % Interquartile range
+
+% Percentiles
+prctile(data, 25)        % 25th percentile
+prctile(data, 50)        % 50th (median)
+prctile(data, 75)        % 75th percentile
+
+% Top/bottom values
+maxk(data, 3)            % 3 largest
+mink(data, 3)            % 3 smallest
+
+% Standardization
+zscore(data)             % Z-scores
+
+% ===========================================
+% EXAMPLE: Set Operations
+% ===========================================
+
+A = [1 2 3 4 5]
+B = [3 4 5 6 7]
+
+union(A, B)              % All unique: [1 2 3 4 5 6 7]
+intersect(A, B)          % Common: [3 4 5]
+setdiff(A, B)            % In A, not B: [1 2]
+setdiff(B, A)            % In B, not A: [6 7]
+setxor(A, B)             % Symmetric diff: [1 2 6 7]

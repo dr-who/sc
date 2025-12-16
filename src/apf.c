@@ -1,9 +1,14 @@
 /* apf.c - arbitrary-precision bigfloat core using only 16/32-bit arithmetic
  * C89 compliant for Watcom C / DOS
+ * 
+ * Pure soft-float library:
+ * - No float/double types
+ * - No stdio (printf, fprintf, etc)
+ * - No stdlib
+ * - Only includes own header
  */
 
 #include "apf.h"
-#include <stdio.h>
 
 /* Global output rounding mode */
 static int apf_round_mode = APF_ROUND_NEAREST;
@@ -218,31 +223,6 @@ void apf_from_int(apf *x, long v)
     apf_norm(x);
 }
 
-/* Convert from double - useful for interfacing with native math */
-void apf_from_double(apf *r, double d)
-{
-    char buf[64];
-    if (d == 0.0) {
-        apf_zero(r);
-        return;
-    }
-    /* Use sprintf to convert, then parse - simple and portable */
-    sprintf(buf, "%.17g", d);
-    apf_from_str(r, buf);
-}
-
-/* Convert to double - loses precision but useful for plotting */
-double apf_to_double(const apf *a)
-{
-    char buf[64];
-    if (a->cls == APF_CLASS_ZERO) return 0.0;
-    if (a->cls == APF_CLASS_INF) return a->sign ? -1e308 : 1e308;
-    if (a->cls == APF_CLASS_NAN) return 0.0;  /* Can't represent NaN portably */
-    
-    apf_to_str(buf, sizeof(buf), a, 15);
-    return atof(buf);
-}
-
 int apf_isnan(const apf *x)  { return x->cls == APF_CLASS_NAN; }
 int apf_isinf(const apf *x)  { return x->cls == APF_CLASS_INF; }
 int apf_iszero(const apf *x) { return x->cls == APF_CLASS_ZERO; }
@@ -347,6 +327,14 @@ int apf_cmp(const apf *a, const apf *b)
     if (B.cls == APF_CLASS_ZERO) return A.sign ? -1 : 1;
 
     return 0;
+}
+
+/* Compare APF with integer */
+int apf_cmp_int(const apf *a, long n)
+{
+    apf b;
+    apf_from_int(&b, n);
+    return apf_cmp(a, &b);
 }
 
 int apf_eq(const apf *a, const apf *b) { return !apf_isnan(a) && !apf_isnan(b) && apf_cmp(a,b) == 0; }
@@ -544,28 +532,72 @@ long apf_to_long(const apf *x)
     return neg ? -(long)top32 : (long)top32;
 }
 
-void apf_dump(const apf *x, void *fp)
+/* Dump internal representation to string buffer */
+char *apf_dump_str(char *buf, int bufsize, const apf *x)
 {
-    FILE *f = fp ? (FILE *)fp : stdout;
+    char *p = buf;
+    char *end = buf + bufsize - 1;
     int i;
-
+    
+    if (bufsize < 2) {
+        buf[0] = '\0';
+        return buf;
+    }
+    
     if (x->cls == APF_CLASS_NAN) {
-        fprintf(f, "NaN\n");
-        return;
+        if (p + 3 <= end) { *p++ = 'N'; *p++ = 'a'; *p++ = 'N'; }
+        *p = '\0';
+        return buf;
     }
     if (x->cls == APF_CLASS_INF) {
-        fprintf(f, "%sInf\n", x->sign ? "-" : "+");
-        return;
+        if (x->sign && p < end) *p++ = '-';
+        else if (p < end) *p++ = '+';
+        if (p + 3 <= end) { *p++ = 'I'; *p++ = 'n'; *p++ = 'f'; }
+        *p = '\0';
+        return buf;
     }
     if (x->cls == APF_CLASS_ZERO) {
-        fprintf(f, "%s0\n", x->sign ? "-" : "+");
-        return;
+        if (x->sign && p < end) *p++ = '-';
+        else if (p < end) *p++ = '+';
+        if (p < end) *p++ = '0';
+        *p = '\0';
+        return buf;
     }
-
-    fprintf(f, "NORMAL sign=%d exp=%ld mant=0x", x->sign, x->exp);
-    for (i = AP_LIMBS - 1; i >= 0; --i)
-        fprintf(f, "%04X", x->mant[i] & 0xFFFFu);
-    fprintf(f, "\n");
+    
+    /* NORMAL: sign=N exp=N mant=0xHHHH... */
+    {
+        const char *prefix = "NORMAL sign=";
+        while (*prefix && p < end) *p++ = *prefix++;
+        *p++ = x->sign ? '1' : '0';
+        prefix = " exp=";
+        while (*prefix && p < end) *p++ = *prefix++;
+        /* Write exponent */
+        {
+            long e = x->exp;
+            char tmp[20];
+            int len = 0;
+            int neg = 0;
+            if (e < 0) { neg = 1; e = -e; }
+            do {
+                tmp[len++] = '0' + (e % 10);
+                e /= 10;
+            } while (e > 0);
+            if (neg && p < end) *p++ = '-';
+            while (len > 0 && p < end) *p++ = tmp[--len];
+        }
+        prefix = " mant=0x";
+        while (*prefix && p < end) *p++ = *prefix++;
+        for (i = AP_LIMBS - 1; i >= 0 && p + 4 <= end; --i) {
+            static const char hex[] = "0123456789ABCDEF";
+            limb_t v = x->mant[i];
+            *p++ = hex[(v >> 12) & 0xF];
+            *p++ = hex[(v >> 8) & 0xF];
+            *p++ = hex[(v >> 4) & 0xF];
+            *p++ = hex[v & 0xF];
+        }
+    }
+    *p = '\0';
+    return buf;
 }
 
 /* full product: out[0..2*n-1] = a*b, where a,b are n-limb values */
@@ -939,11 +971,15 @@ void apf_sqrt(apf *r, const apf *a)
 
     /* Newton iterations: x = (x + S/x) / 2
      * Convergence is quadratic, so log2(AP_BITS) + 2 iterations suffice.
-     * 10 iterations handles up to 512+ bits safely.
+     * 10 iterations handles up to 256 bits, 12 for 512, 14 for 1024+
      */
+#if AP_BITS > 512
+    iterations = 14;
+#elif AP_BITS > 256
+    iterations = 12;
+#else
     iterations = 10;
-    if (AP_BITS > 256) iterations = 12;
-    if (AP_BITS > 512) iterations = 14;
+#endif
 
     for (i = 0; i < iterations; i++) {
         apf_div(&quotient, &S, &x);      /* S / x */
@@ -1498,5 +1534,147 @@ void apf_from_str(apf *x, const char *s)
     if (neg && x->cls == APF_CLASS_NORMAL) {
         x->sign = 1;
     }
+}
+
+/* Helper: get the integer part of a number (truncate toward zero)
+ * Uses the approach: subtract fractional part
+ * For positive x: trunc(x) = floor(x)
+ * For negative x: trunc(x) = ceil(x)
+ */
+void apf_trunc(apf *r, const apf *a)
+{
+    int bits_to_clear, i;
+    long frac_bits;
+    
+    if (a->cls != APF_CLASS_NORMAL) {
+        apf_copy(r, a);
+        return;
+    }
+    
+    /* After normalization, mantissa has MSB at bit AP_BITS-1.
+     * Value = mantissa * 2^exp
+     * Mantissa bit i corresponds to value bit (i + exp).
+     * For truncation, we zero out all value bits at positions < 0,
+     * which means zeroing mantissa bits at positions < -exp.
+     */
+    
+    if (a->exp >= 0) {
+        /* All mantissa bits are at position >= exp >= 0, so integer already */
+        apf_copy(r, a);
+        return;
+    }
+    
+    /* exp < 0: need to clear bottom (-exp) bits */
+    frac_bits = -a->exp;
+    
+    if (frac_bits >= AP_BITS) {
+        /* All bits are fractional, result is 0 */
+        apf_zero(r);
+        return;
+    }
+    
+    /* Copy and clear the fractional bits */
+    apf_copy(r, a);
+    
+    bits_to_clear = (int)frac_bits;
+    
+    /* Clear whole limbs first */
+    for (i = 0; bits_to_clear >= 16; i++, bits_to_clear -= 16) {
+        r->mant[i] = 0;
+    }
+    
+    /* Clear remaining bits in the partial limb */
+    if (bits_to_clear > 0 && i < AP_LIMBS) {
+        limb_t mask = (limb_t)(0xFFFFu << bits_to_clear);
+        r->mant[i] &= mask;
+    }
+    
+    /* Re-normalize in case we cleared leading bits (shouldn't happen for trunc) */
+    /* Actually, we cleared low bits not high bits, so no need to renormalize */
+    /* But check if we made it zero */
+    if (limb_is_zero(r->mant)) {
+        apf_zero(r);
+    }
+}
+
+/* Floor: greatest integer <= a */
+void apf_floor(apf *r, const apf *a)
+{
+    apf truncated, one, frac;
+    
+    if (a->cls != APF_CLASS_NORMAL) {
+        apf_copy(r, a);
+        return;
+    }
+    
+    apf_trunc(&truncated, a);
+    
+    /* Check if a == trunc(a) */
+    apf_sub(&frac, a, &truncated);
+    
+    if (apf_is_zero(&frac)) {
+        /* a is already an integer */
+        apf_copy(r, &truncated);
+        return;
+    }
+    
+    /* If a is negative and has fractional part, floor = trunc - 1 */
+    if (a->sign) {
+        apf_from_int(&one, 1);
+        apf_sub(r, &truncated, &one);
+    } else {
+        apf_copy(r, &truncated);
+    }
+}
+
+/* Ceil: smallest integer >= a */
+void apf_ceil(apf *r, const apf *a)
+{
+    apf truncated, one, frac;
+    
+    if (a->cls != APF_CLASS_NORMAL) {
+        apf_copy(r, a);
+        return;
+    }
+    
+    apf_trunc(&truncated, a);
+    
+    /* Check if a == trunc(a) */
+    apf_sub(&frac, a, &truncated);
+    
+    if (apf_is_zero(&frac)) {
+        /* a is already an integer */
+        apf_copy(r, &truncated);
+        return;
+    }
+    
+    /* If a is positive and has fractional part, ceil = trunc + 1 */
+    if (!a->sign) {
+        apf_from_int(&one, 1);
+        apf_add(r, &truncated, &one);
+    } else {
+        apf_copy(r, &truncated);
+    }
+}
+
+/* Modulo: a % b = a - b * floor(a/b) */
+void apf_mod(apf *r, const apf *a, const apf *b)
+{
+    apf quotient, floored, product;
+    
+    if (b->cls != APF_CLASS_NORMAL || apf_is_zero(b)) {
+        apf_set_nan(r);
+        return;
+    }
+    
+    if (a->cls != APF_CLASS_NORMAL) {
+        apf_copy(r, a);
+        return;
+    }
+    
+    apf_div(&quotient, a, b);
+    apf_floor(&floored, &quotient);
+    apf_mul(&product, b, &floored);
+    apf_sub(r, a, &product);
 }
 

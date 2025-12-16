@@ -1,257 +1,1412 @@
-.\" Man page for sc - Scientific Calculator
-.\" Process with: groff -man -Tascii sc.1
-.TH SC 1 "December 2024" "sc 1.0" "User Commands"
+.\" sc - Scientific Calculator man page
+.TH SC 1 "December 2024" "sc 1.0.0" "User Commands"
 .SH NAME
 sc \- arbitrary precision scientific calculator
 .SH SYNOPSIS
 .B sc
-[\fIexpression\fR]
+.RI [ expression ]
 .br
-echo \fIexpression\fR |
 .B sc
+.RI [ options ]
 .SH DESCRIPTION
 .B sc
-is an interactive arbitrary precision scientific calculator supporting
-complex numbers, matrices, and a wide range of mathematical functions.
-It uses 128-bit quad precision floating point internally for high accuracy.
+is a high-precision scientific calculator with support for complex numbers,
+matrices, statistics, financial calculations, and IEEE 754-2008 compliant
+arithmetic. It provides 128-bit internal precision (approximately 38
+significant decimal digits).
 .PP
-When run without arguments,
+When invoked without arguments,
 .B sc
-enters interactive mode with a
-.B >>>
-prompt (like bc). When given an expression as an argument or via stdin,
-it evaluates and prints the result.
-.SH FEATURES
+enters interactive mode with a REPL (Read-Eval-Print Loop).
+When given an expression as an argument, it evaluates and prints the result.
+.SH OPTIONS
 .TP
-.B Arbitrary Precision
-128-bit quad precision (approximately 34 significant digits)
+.B \-h, \-\-help
+Display help message and exit.
 .TP
-.B Complex Numbers
-Full support for complex arithmetic using
-.I i
-as the imaginary unit
+.B \-v, \-\-version
+Display version information and exit.
+.SH BASIC ARITHMETIC
+.SS Operators
 .TP
-.B Matrices
-Create, manipulate, and perform linear algebra operations on matrices
+.B +
+Addition
 .TP
-.B Scientific Functions
-Trigonometric, hyperbolic, exponential, logarithmic, and special functions
+.B \-
+Subtraction
 .TP
-.B Multiple Number Formats
-Decimal, hexadecimal (0x), binary (0b), octal (0o), and Roman numerals
-.SH OPERATORS
+.B * \fRor\fB ×
+Multiplication (Unicode × supported)
 .TP
-.B + \- * /
-Basic arithmetic (addition, subtraction, multiplication, division)
-.TP
-.B ^
-Exponentiation (right associative: 2^3^2 = 2^9 = 512)
+.B / \fRor\fB ÷
+Division (Unicode ÷ supported)
 .TP
 .B %
-Modulo
+Modulo (floor division remainder)
+.TP
+.B ^
+Exponentiation (right-associative: 2^3^2 = 2^9 = 512)
 .TP
 .B !
-Factorial (postfix)
+Factorial (postfix: 5! = 120)
 .TP
-.B ( )
-Grouping
-.SH FUNCTIONS
-.SS Trigonometric (radians)
-.B sin cos tan asin acos atan atan2
-.SS Hyperbolic
-.B sinh cosh tanh asinh acosh atanh
-.SS Exponential and Logarithmic
-.B exp
-\- exponential (e^x)
-.br
-.B log ln
-\- natural logarithm
-.br
-.B log10
-\- base-10 logarithm
-.br
-.B log2
-\- base-2 logarithm
-.SS Power and Root
-.B sqrt cbrt
-\- square root, cube root
-.br
-.B pow(x,y)
-\- x raised to power y
-.SS Complex Number Functions
-.B abs arg conj real imag
-.br
-.B phase polar rect
-.SS Other Functions
-.B floor ceil round trunc frac
-.br
-.B min max gcd lcm
-.br
-.B rand randn randi
-\- random numbers
-.SH CONSTANTS
+.B \\\\
+Left division (a\\\\b = b/a, useful for matrices)
+.SS Comparison Operators
+Return \fBtrue\fR or \fBfalse\fR:
+.TP
+.B = \fRor\fB ==
+Equal
+.TP
+.B <>
+Not equal
+.TP
+.B <
+Less than
+.TP
+.B <=
+Less than or equal
+.TP
+.B >
+Greater than
+.TP
+.B >=
+Greater than or equal
+.TP
+.B ~=
+Approximately equal (within 5% of left operand's absolute value)
+.SS Boolean Operators
+Combine comparisons logically. Return \fBtrue\fR or \fBfalse\fR:
+.TP
+.B and \fRor\fB &&
+Logical AND
+.TP
+.B or \fRor\fB ||
+Logical OR
+.TP
+.B xor
+Logical exclusive OR
+.TP
+.B not \fRor\fB ~
+Logical NOT (prefix operator)
+.PP
+Examples:
+.nf
+    1<2 and 3<4          # true
+    1>2 or 3<4           # true
+    not 1>2              # true
+    (1<2 or 5>10) and 3<4   # true
+.fi
+.SS Exit Codes
+When used in shell scripts, \fBsc\fR returns:
+.TP
+.B 0
+Result is true or non-zero
+.TP
+.B 1
+Result is false or zero
+.PP
+This enables use in shell conditionals:
+.nf
+    if sc "isprime(17)"; then echo "prime"; fi
+    if sc "x~=expected"; then echo "close enough"; fi
+.fi
+.SS Order of Operations (BEDMAS)
+Brackets, Exponents, Division/Multiplication (left-to-right),
+Addition/Subtraction (left-to-right).
+.PP
+Example: 2 + 3 * 4 = 14 (not 20)
+.SS Special Values
 .TP
 .B pi
-3.14159265358979323846...
+π = 3.14159265358979323846...
 .TP
 .B e
-2.71828182845904523536...
+Euler's number = 2.71828182845904523536...
 .TP
 .B i
-Imaginary unit (sqrt(-1))
-.TP
-.B Inf
-Positive infinity
-.TP
-.B NaN
-Not a number
+Imaginary unit (√-1)
 .TP
 .B ans
-Result of previous calculation
-.SH COMMANDS
+Result of the last calculation
 .TP
-.B help
-Display help information
+.B inf
+Positive infinity
 .TP
-.B digits \fIN\fR
-Set display precision to N significant figures (default 16, max 37)
+.B nan
+Not a Number
 .TP
-.B round \fIMODE\fR
-Set rounding mode: nearest, ceil, floor, trunc, away
+.B true
+Boolean true (1)
 .TP
-.B vars
-Show defined variables
+.B false
+Boolean false (0)
 .TP
-.B clear
-Clear all variables
+.B eps
+Machine epsilon (~2.2e-16)
 .TP
-.B test
-Run built-in test suite
+.B realmax
+Largest finite floating-point value (~1.8e308)
 .TP
-.B quit
-Exit the calculator
+.B realmin
+Smallest positive normalized value (~2.2e-308)
 .SH VARIABLES
-Single-letter variables (a-z) can be assigned values:
+Variables are assigned with \fB=\fR:
 .PP
 .RS
 >>> x = 5
 .br
->>> y = x^2
+>>> y = x^2 + 3*x + 1
 .br
 >>> y
 .br
-= 25
+= 41
 .RE
-.SH MATRICES
-Matrices are defined using square brackets:
+.PP
+Variable names are case-sensitive and can contain letters, numbers, and
+underscores (must start with a letter).
+.SS Commands
+.TP
+.B vars
+List all defined variables
+.TP
+.B clear \fIname\fR
+Clear a specific variable
+.TP
+.B clearall
+Clear all variables
+.SH ANGLE MODES
+By default, all trigonometric functions use radians. Use these commands to change angle mode:
+.TP
+.B deg \fRor\fB degrees
+Use degrees (360° = full circle)
+.TP
+.B rad \fRor\fB radians
+Use radians (2π = full circle) [default]
+.TP
+.B grad \fRor\fB gradians
+Use gradians (400 grad = full circle)
+.PP
+The angle mode affects \fBsin\fR, \fBcos\fR, \fBtan\fR, \fBsec\fR, \fBcsc\fR, \fBcot\fR and their inverses, as well as \fBatan2\fR.
+.SH FUNCTIONS
+.SS Trigonometric
+.TP
+.B sin(x), cos(x), tan(x)
+Sine, cosine, tangent
+.TP
+.B asin(x), acos(x), atan(x)
+Inverse trigonometric functions (arcsin, arccos, arctan)
+.TP
+.B atan2(y, x)
+Two-argument arctangent
+.TP
+.B sec(x), csc(x), cot(x)
+Reciprocal functions: secant (1/cos), cosecant (1/sin), cotangent (1/tan)
+.TP
+.B asec(x), acsc(x), acot(x)
+Inverse reciprocal functions
+.SS Hyperbolic
+.TP
+.B sinh(x), cosh(x), tanh(x)
+Hyperbolic sine, cosine, tangent
+.TP
+.B asinh(x), acosh(x), atanh(x)
+Inverse hyperbolic functions
+.SS Exponential and Logarithmic
+.TP
+.B exp(x)
+e^x
+.TP
+.B exp2(x) \fRor\fB pow2(x)
+2^x
+.TP
+.B ln(x) \fRor\fB log(x)
+Natural logarithm
+.TP
+.B log10(x)
+Base-10 logarithm
+.TP
+.B log2(x)
+Base-2 logarithm
+.TP
+.B logb(x, base)
+Logarithm with arbitrary base
+.TP
+.B sqrt(x)
+Square root
+.SS Angle Conversion
+.TP
+.B deg2rad(x)
+Convert degrees to radians
+.TP
+.B rad2deg(x)
+Convert radians to degrees
+.TP
+.B sind(x), cosd(x), tand(x)
+Trigonometric functions with argument in degrees
+.TP
+.B secd(x), cscd(x), cotd(x)
+Reciprocal trig functions with argument in degrees
+.TP
+.B asind(x), acosd(x), atand(x)
+Inverse trig functions returning degrees
+.TP
+.B asecd(x), acscd(x), acotd(x)
+Inverse reciprocal trig functions returning degrees
+.TP
+.B atan2d(y, x)
+Two-argument arctangent returning degrees
+.SS Rounding and Remainders
+.TP
+.B floor(x)
+Greatest integer ≤ x
+.TP
+.B ceil(x)
+Smallest integer ≥ x
+.TP
+.B trunc(x) \fRor\fB int(x)
+Integer part (truncate toward zero)
+.TP
+.B frac(x)
+Fractional part (x - trunc(x))
+.TP
+.B mod(a, b)
+Modulo (same as a % b)
+.TP
+.B abs(x)
+Absolute value
+.SS Complex Numbers
+.TP
+.B re(z) \fRor\fB real(z)
+Real part
+.TP
+.B im(z) \fRor\fB imag(z)
+Imaginary part
+.TP
+.B conj(z)
+Complex conjugate
+.TP
+.B arg(z)
+Argument (phase angle)
+.TP
+.B abs(z)
+Magnitude (modulus)
+.PP
+Complex numbers are entered as \fBa + bi\fR or \fBa + b*i\fR:
 .PP
 .RS
->>> A = [1,2;3,4]
+>>> (3 + 4i) * (1 - 2i)
 .br
->>> B = [5,6;7,8]
+= 11 - 2i
+.br
+>>> sqrt(-1)
+.br
+= 1i
+.RE
+.SS Combinatorics
+.TP
+.B fact(n) \fRor\fB n!
+Factorial
+.TP
+.B ncr(n, r) \fRor\fB choose(n, r)
+Combinations (n choose r)
+.TP
+.B npr(n, r) \fRor\fB perm(n, r)
+Permutations
+.TP
+.B even(n)
+Returns true if n is even, false otherwise
+.TP
+.B odd(n)
+Returns true if n is odd, false otherwise
+.TP
+.B isprime(n)
+Primality test (returns true if prime, false if not). Uses Miller-Rabin algorithm.
+.TP
+.B gcd(a, b)
+Greatest common divisor
+.TP
+.B lcm(a, b)
+Least common multiple
+.SS Special Functions
+.TP
+.B gamma(x) \fRor\fB tgamma(x)
+Gamma function \[*G](x). Extends factorial to real numbers: \[*G](n) = (n-1)! for positive integers.
+.TP
+.B lgamma(x)
+Log-gamma: ln(|\[*G](x)|). More stable for large arguments.
+.TP
+.B beta(a, b)
+Beta function: B(a,b) = \[*G](a)\[*G](b)/\[*G](a+b)
+.TP
+.B erf(x)
+Error function: (2/\[sr]\[*p]) \[is]\d0\ux e^(-t\[S2]) dt
+.TP
+.B erfc(x)
+Complementary error function: 1 - erf(x). More accurate for large x.
+.SS Statistical Distributions
+.TP
+.B normcdf(x)
+Standard normal CDF: \[*F](x) = P(Z \[<=] x) where Z ~ N(0,1)
+.TP
+.B norminv(p)
+Inverse normal CDF (probit): returns x where \[*F](x) = p
+.TP
+.B tcdf(t, df)
+Student's t-distribution CDF with df degrees of freedom
+.TP
+.B tinv(p, df)
+Inverse Student's t CDF
+.TP
+.B chi2cdf(x, df)
+Chi-squared distribution CDF
+.TP
+.B chi2inv(p, df)
+Inverse chi-squared CDF
+.TP
+.B fcdf(x, df1, df2)
+F-distribution CDF
+.TP
+.B binompdf(k, n, p)
+Binomial probability mass function: P(X = k) for X ~ Binomial(n, p)
+.TP
+.B binomcdf(k, n, p)
+Binomial CDF: P(X \[<=] k)
+.TP
+.B poisspdf(k, lambda)
+Poisson probability mass function: P(X = k) for X ~ Poisson(\[*l])
+.TP
+.B poisscdf(k, lambda)
+Poisson CDF: P(X \[<=] k)
+.SS Bessel Functions
+.TP
+.B j0(x), j1(x)
+Bessel functions of the first kind, orders 0 and 1
+.TP
+.B y0(x), y1(x)
+Bessel functions of the second kind (Neumann functions), orders 0 and 1
+.TP
+.B i0(x), i1(x)
+Modified Bessel functions of the first kind, orders 0 and 1
+.TP
+.B k0(x), k1(x)
+Modified Bessel functions of the second kind, orders 0 and 1
+.SS Elliptic Integrals
+.TP
+.B ellipk(m)
+Complete elliptic integral of the first kind K(m), computed using AGM method
+.TP
+.B ellipe(m)
+Complete elliptic integral of the second kind E(m)
+.SS Other Special Functions
+.TP
+.B lambertw(x)
+Lambert W function: solves W(x)\[md]e^(W(x)) = x (principal branch W\d0\u)
+.SH MATRICES
+Matrices are entered using square brackets with semicolons separating rows:
+.PP
+.RS
+>>> A = [1 2; 3 4]
+.br
+>>> B = [5 6; 7 8]
 .br
 >>> A * B
+.br
+   19   22
+.br
+   43   50
 .RE
-.PP
-Matrix functions include:
-.B inv transpose det trace eye zeros ones diag
-.SH EXAMPLES
+.SS Matrix Creation Functions
 .TP
-Basic arithmetic:
+.B zeros(n) \fRor\fB zeros(m, n)
+Matrix of zeros
+.TP
+.B ones(n) \fRor\fB ones(m, n)
+Matrix of ones
+.TP
+.B eye(n)
+Identity matrix
+.TP
+.B rand(n) \fRor\fB rand(m, n)
+Random matrix (uniform 0-1)
+.TP
+.B randn(n) \fRor\fB randn(m, n)
+Random matrix (standard normal)
+.TP
+.B randi(max, m, n)
+Random integers 1 to max
+.TP
+.B randi(min, max, m, n)
+Random integers min to max
+.SS Matrix Operations
+.TP
+.B A + B, A - B
+Element-wise addition/subtraction
+.TP
+.B A * B
+Matrix multiplication
+.TP
+.B A .* B
+Element-wise multiplication
+.TP
+.B A ./ B
+Element-wise division
+.TP
+.B A .^ n
+Element-wise power
+.TP
+.B A'
+Transpose
+.TP
+.B A \\\\ B
+Left division (solve AX = B)
+.TP
+.B A / B
+Right division (solve XB = A)
+.SS Matrix Functions
+.TP
+.B det(A)
+Determinant
+.TP
+.B inv(A)
+Inverse
+.TP
+.B trace(A)
+Sum of diagonal elements
+.TP
+.B size(A)
+Dimensions [rows cols]
+.TP
+.B lu(A)
+LU decomposition (prints L and U)
+.SS Matrix Indexing
+.TP
+.B A(i, j)
+Element at row i, column j (1-indexed)
+.TP
+.B A(i, :)
+Row i
+.TP
+.B A(:, j)
+Column j
+.TP
+.B start:end
+Colon notation creates row vector (e.g., 1:5 = [1 2 3 4 5])
+.TP
+.B start:step:end
+Colon with step (e.g., 1:2:9 = [1 3 5 7 9])
+.SS Array Manipulation Functions
+.TP
+.B linspace(a, b, n)
+n linearly spaced points from a to b (default n=10)
+.TP
+.B logspace(a, b, n)
+n logarithmically spaced points from 10^a to 10^b (default n=50)
+.TP
+.B fliplr(M)
+Flip matrix left-right
+.TP
+.B flipud(M)
+Flip matrix up-down
+.TP
+.B flip(v)
+Flip vector
+.TP
+.B rot90(M)
+Rotate matrix 90° counterclockwise
+.TP
+.B sort(v)
+Sort elements in ascending order
+.TP
+.B unique(v)
+Return sorted unique elements
+.TP
+.B cumsum(v)
+Cumulative sum
+.TP
+.B cumprod(v)
+Cumulative product
+.TP
+.B diff(v)
+Differences between consecutive elements
+.TP
+.B find(v)
+Indices of non-zero elements (1-indexed)
+.TP
+.B reshape(M, r, c)
+Reshape matrix to r rows and c columns
+.TP
+.B repmat(M, r, c)
+Replicate matrix r×c times
+.TP
+.B circshift(v, n)
+Circular shift by n positions
+.TP
+.B randperm(n)
+Random permutation of 1:n
+.SS Reduction Functions
+.TP
+.B sum(M)
+Sum of all elements
+.TP
+.B prod(M)
+Product of all elements
+.TP
+.B mean(M)
+Arithmetic mean
+.TP
+.B std(M) \fRor\fB sd(M)
+Standard deviation
+.TP
+.B var(M)
+Variance
+.TP
+.B median(M)
+Median value
+.TP
+.B any(M)
+True if any element is nonzero
+.TP
+.B all(M)
+True if all elements are nonzero
+.TP
+.B nnz(M)
+Count of nonzero elements
+.SS Predicate Functions
+.TP
+.B isnan(x)
+True if x is NaN
+.TP
+.B isinf(x)
+True if x is Inf or -Inf
+.TP
+.B isfinite(x)
+True if x is neither Inf nor NaN
+.TP
+.B isreal(x)
+True if x has no imaginary part
+.TP
+.B isempty(M)
+True if matrix is empty
+.TP
+.B isscalar(x)
+True if x is a scalar
+.TP
+.B isvector(M)
+True if M is a row or column vector
+.TP
+.B ismatrix(M)
+True if M is a matrix
+.TP
+.B isrow(M)
+True if M is a row vector (1×n)
+.TP
+.B iscolumn(M)
+True if M is a column vector (n×1)
+.TP
+.B issquare(M)
+True if M is a square matrix (n×n)
+.TP
+.B issymmetric(M)
+True if M equals its transpose
+.TP
+.B isdiag(M)
+True if M is diagonal
+.TP
+.B istriu(M)
+True if M is upper triangular
+.TP
+.B istril(M)
+True if M is lower triangular
+.TP
+.B issorted(v)
+True if v is sorted in ascending order
+.TP
+.B isequal(a, b)
+True if a equals b
+.TP
+.B ndims(M)
+Number of dimensions (always 2 for matrices)
+.SS Set Operations
+.TP
+.B union(A, B)
+Set union of unique sorted elements
+.TP
+.B intersect(A, B)
+Set intersection
+.TP
+.B setdiff(A, B)
+Elements in A but not in B
+.TP
+.B setxor(A, B)
+Symmetric difference (elements in A or B but not both)
+.SS Sorting and Selection
+.TP
+.B sort(v)
+Sort elements ascending
+.TP
+.B sortrows(M)
+Sort matrix rows by first column
+.TP
+.B maxk(v, k)
+k largest elements
+.TP
+.B mink(v, k)
+k smallest elements
+.SS Statistical Functions (Additional)
+.TP
+.B range(v)
+Range: max(v) - min(v)
+.TP
+.B iqr(v)
+Interquartile range (Q3 - Q1)
+.TP
+.B prctile(v, p)
+p-th percentile (0-100)
+.TP
+.B cov(v)
+Covariance (variance for vector)
+.TP
+.B zscore(v)
+Z-score normalization: (x - mean) / std
+.SS Real-Only Math Functions
+.TP
+.B nthroot(x, n)
+Real nth root (preserves sign for odd n)
+.TP
+.B realsqrt(x)
+Real square root (error if x < 0)
+.TP
+.B reallog(x)
+Real logarithm (error if x <= 0)
+.TP
+.B realpow(x, y)
+Real power (error if result would be complex)
+.SS Element-wise Comparison Functions
+.TP
+.B eq(A, B)
+Element-wise equal (A == B)
+.TP
+.B ne(A, B)
+Element-wise not equal (A ~= B)
+.TP
+.B lt(A, B)
+Element-wise less than (A < B)
+.TP
+.B le(A, B)
+Element-wise less or equal (A <= B)
+.TP
+.B gt(A, B)
+Element-wise greater than (A > B)
+.TP
+.B ge(A, B)
+Element-wise greater or equal (A >= B)
+.SS Element-wise Operations
+.TP
+.B times(A, B)
+Element-wise multiply (A .* B)
+.TP
+.B rdivide(A, B)
+Element-wise right divide (A ./ B)
+.TP
+.B ldivide(A, B)
+Element-wise left divide (A .\\ B)
+.TP
+.B plus(A, B)
+Element-wise add (A + B)
+.TP
+.B minus(A, B)
+Element-wise subtract (A - B)
+.SS Cumulative Functions
+.TP
+.B cummax(v)
+Cumulative maximum
+.TP
+.B cummin(v)
+Cumulative minimum
+.TP
+.B rescale(v)
+Scale values to [0, 1]
+.SS Signal Processing Functions
+.TP
+.B conv(a, b)
+Convolution of two vectors
+.TP
+.B deconv(u, v)
+Deconvolution (polynomial division)
+.TP
+.B gradient(v)
+Numerical gradient (central differences)
+.TP
+.B trapz(y)
+Trapezoidal integration
+.TP
+.B movmean(v, k)
+Moving average with window size k
+.TP
+.B movsum(v, k)
+Moving sum with window size k
+.TP
+.B corrcoef(X, Y)
+Correlation coefficient between X and Y
+.TP
+.B interp1(x, y, xi)
+Linear interpolation
+.TP
+.B sinc(x)
+Normalized sinc function: sin(πx)/(πx)
+.TP
+.B sigmoid(x)
+Logistic sigmoid: 1/(1+exp(-x))
+.TP
+.B softplus(x)
+Smooth ReLU: ln(1+exp(x))
+.TP
+.B step(x)
+Heaviside step function
+.TP
+.B rect(x)
+Rectangle/boxcar function
+.TP
+.B tri(x)
+Triangle function
+.SS Advanced Statistics
+.TP
+.B geomean(v)
+Geometric mean
+.TP
+.B harmmean(v)
+Harmonic mean
+.TP
+.B skewness(v)
+Sample skewness
+.TP
+.B kurtosis(v)
+Excess kurtosis
+.TP
+.B mad(v)
+Mean absolute deviation
+.SS Precision Functions
+.TP
+.B log1p(x)
+log(1+x), accurate for small x
+.TP
+.B expm1(x)
+exp(x)-1, accurate for small x
+.SS Angle Wrapping
+.TP
+.B wrapToPi(x)
+Wrap angle to [-π, π]
+.TP
+.B wrap360(x)
+Wrap angle to [0, 360)
+.TP
+.B wrap180(x)
+Wrap angle to [-180, 180]
+.SS Special Matrix Functions
+.TP
+.B rank(M)
+Matrix rank (number of linearly independent rows)
+.TP
+.B cond(M)
+Condition number (ratio of largest to smallest singular value)
+.TP
+.B linsolve(A, b)
+Solve linear system Ax = b
+.TP
+.B kron(A, B)
+Kronecker product
+.TP
+.B vander(v, n)
+Vandermonde matrix
+.TP
+.B toeplitz(c)
+Toeplitz matrix
+.TP
+.B hankel(c)
+Hankel matrix
+.TP
+.B blkdiag(A, B)
+Block diagonal matrix
+.TP
+.B compan(p)
+Companion matrix for polynomial
+.SS Index Functions
+.TP
+.B sub2ind([m n], r, c)
+Convert row,col subscripts to linear index
+.TP
+.B ind2sub([m n], idx)
+Convert linear index to row,col subscripts
+.SS Utility Functions
+.TP
+.B clamp(x, lo, hi)
+Limit x to range [lo, hi]
+.TP
+.B isapprox(a, b)
+Approximate equality (tolerance 1e-10)
+.TP
+.B isapprox(a, b, tol)
+Approximate equality with custom tolerance
+.TP
+.B colon(a, b)
+Explicit colon operator, returns a:b
+.TP
+.B colon(a, d, b)
+Explicit colon with step, returns a:d:b
+.TP
+.B cat(dim, A, B)
+Concatenate arrays along dimension
+.SS Coordinate Conversions
+.TP
+.B cart2pol(x, y)
+Cartesian to polar, returns [theta, r]
+.TP
+.B pol2cart(theta, r)
+Polar to Cartesian, returns [x, y]
+.SS Array Manipulation
+.TP
+.B fliplr(M)
+Flip matrix left-right (reverse columns)
+.TP
+.B flipud(M)
+Flip matrix up-down (reverse rows)
+.TP
+.B circshift(v, k)
+Circular shift vector by k positions
+.TP
+.B diff(v)
+Differences between adjacent elements (discrete derivative)
+.SS HP/TI Calculator Functions
+.TP
+.B frac(x)
+Fractional part of x
+.TP
+.B dms(d, m, s)
+Convert degrees/minutes/seconds to decimal degrees
+.TP
+.B hms(h, m, s)
+Convert hours/minutes/seconds to decimal hours
+.TP
+.B deg2dms(d)
+Convert decimal degrees to [d, m, s]
+.TP
+.B hr2hms(h)
+Convert decimal hours to [h, m, s]
+.TP
+.B percent(x, p)
+Calculate p percent of x
+.TP
+.B pctchange(old, new)
+Percent change from old to new value
+.SS Utility Functions
+.TP
+.B lerp(a, b, t)
+Linear interpolation: a + t*(b-a)
+.TP
+.B wrap(x, lo, hi)
+Wrap value to range [lo, hi)
+.TP
+.B clip(x, lo, hi)
+Clamp value to range [lo, hi]
+.TP
+.B remap(x, a1, b1, a2, b2)
+Map x from [a1,b1] to [a2,b2]
+.TP
+.B dist(x1, y1, x2, y2)
+Euclidean distance between two points
+.TP
+.B manhattan(x1, y1, x2, y2)
+Manhattan distance between two points
+.TP
+.B midpoint(x1, y1, x2, y2)
+Midpoint between two points, returns [x, y]
+.SS Number Theory Functions
+.TP
+.B totient(n)
+Euler's totient function phi(n)
+.TP
+.B divisors(n)
+All divisors of n as a row vector
+.TP
+.B mobius(n)
+Mobius function mu(n)
+.SS Statistical Distribution Functions
+.TP
+.B normpdf(x)
+Standard normal probability density
+.TP
+.B normpdf(x, mu, sigma)
+Normal probability density with parameters
+.TP
+.B normcdf(x)
+Standard normal cumulative distribution
+.TP
+.B normcdf(x, mu, sigma)
+Normal cumulative distribution with parameters
+.SS Extended Trigonometric Functions
+.TP
+.B sinpi(x)
+sin(pi*x), exact at integer values
+.TP
+.B cospi(x)
+cos(pi*x), exact at half-integer values
+.SS Logical Functions
+.TP
+.B nand(a, b)
+Logical NOT AND
+.TP
+.B nor(a, b)
+Logical NOT OR
+.TP
+.B implies(a, b)
+Logical implication (not a or b)
+.SS Equation Solving Functions
+.TP
+.B quadratic(a, b, c)
+Solve ax^2+bx+c=0, returns [x1, x2]
+.SS Mathematical Constants
+.TP
+.B golden()
+Golden ratio phi = (1+sqrt(5))/2 ≈ 1.618
+.TP
+.B silver()
+Silver ratio = 1+sqrt(2) ≈ 2.414
+.SS Polynomial Functions
+.TP
+.B polyval(p, x)
+Evaluate polynomial p at x (coefficients highest to lowest degree)
+.TP
+.B polyder(p)
+Derivative coefficients of polynomial p
+.TP
+.B polyint(p)
+Integral coefficients of polynomial p (constant = 0)
+.SH STATISTICS
+.SS Data Entry
+.TP
+.B data+ \fIx\fR
+Add single data point
+.TP
+.B data+ \fIx y\fR
+Add paired data point (for regression)
+.TP
+.B data- \fIx\fR
+Remove data point
+.SS Statistical Commands
+.TP
+.B stat
+Show summary (n, Σx, mean, median, sdev, r)
+.TP
+.B stat clear
+Clear all data
+.TP
+.B stat mean
+Arithmetic mean
+.TP
+.B stat median
+Median (middle value)
+.TP
+.B stat sdev \fRor\fB stat sd
+Sample standard deviation
+.TP
+.B stat var
+Sample variance
+.TP
+.B stat sum
+Sum of all values
+.TP
+.B stat n \fRor\fB stat count
+Number of data points
+.SS Regression (requires paired data)
+.TP
+.B stat corr \fRor\fB stat r
+Pearson correlation coefficient
+.TP
+.B stat slope \fRor\fB stat m
+Regression line slope
+.TP
+.B stat intercept \fRor\fB stat b
+Regression line y-intercept
+.TP
+.B stat reg
+Full regression summary (y = mx + b, r)
+.SS T-Tests
+.TP
+.B stat ttest
+One-sample t-test vs μ₀=0
+.TP
+.B stat ttest \fImu0\fR
+One-sample t-test vs specified μ₀
+.TP
+.B stat ttest 2
+Two-sample Welch's t-test (x vs y data)
+.PP
+Example:
+.PP
+.RS
+>>> stat clear
+.br
+>>> data+ 23
+.br
+>>> data+ 25
+.br
+>>> data+ 27
+.br
+>>> data+ 22
+.br
+>>> data+ 26
+.br
+>>> stat
+.br
+n      = 5
+.br
+mean   = 24.6
+.br
+median = 25
+.br
+sdev   = 2.073644135
+.br
+>>> stat ttest 25
+.br
+t = -0.4330127
+.br
+df = 4
+.br
+(one-sample t-test vs μ₀=25)
+.RE
+.SH RANDOM NUMBERS
+.SS Scalar Random
+.TP
+.B rand
+Uniform random number in [0, 1)
+.TP
+.B randn
+Standard normal random number
+.TP
+.B randi(\fImax\fB)
+Random integer from 1 to max
+.TP
+.B randi(\fImin\fB, \fImax\fB)
+Random integer from min to max
+.SS Matrix Random
+See MATRICES section for rand(m,n), randn(m,n), randi(max,m,n).
+.SS Seeding
+.TP
+.B seed \fIn\fR
+Set random seed for reproducibility
+.SH TIME VALUE OF MONEY
+Financial calculations using the standard TVM model.
+.SS Variables
+.TP
+.B n
+Number of periods
+.TP
+.B i \fRor\fB rate
+Interest rate per period (as percentage)
+.TP
+.B pv
+Present value
+.TP
+.B pmt
+Payment per period
+.TP
+.B fv
+Future value
+.SS Commands
+.TP
+.B tvm
+Show current TVM values
+.TP
+.B tvm \fIvar\fB = \fIvalue\fR
+Set a TVM variable
+.TP
+.B tvm solve \fIvar\fR
+Solve for unknown variable
+.TP
+.B tvm clear
+Reset all TVM values
+.PP
+Example (loan calculation):
+.PP
+.RS
+>>> tvm n = 360
+.br
+>>> tvm i = 0.5
+.br
+>>> tvm pv = 200000
+.br
+>>> tvm fv = 0
+.br
+>>> tvm solve pmt
+.br
+pmt = -1199.10
+.RE
+.SH EQUATION SOLVING
+.SS Newton-Raphson Solver
+.TP
+.B newton \fIexpr\fB = \fItarget\fR
+Solve equation using Newton's method
+.TP
+.B newton \fIexpr\fB = \fItarget\fB from \fIguess\fR
+Solve with initial guess
+.PP
+Use \fBx\fR as the variable to solve for:
+.PP
+.RS
+>>> newton x^2 = 2
+.br
+x = 1.41421356237...
+.br
+>>> newton sin(x) = 0.5 from 0
+.br
+x = 0.52359877559... (π/6)
+.RE
+.SS General Solver
+.TP
+.B solve \fIexpr\fR
+Find root where expr = 0
+.SH DISPLAY OPTIONS
+.SS Display Modes
+Use the \fBmode\fR command to change how results are displayed:
+.TP
+.B mode
+Show current display mode
+.TP
+.B mode dec
+Decimal display (default)
+.TP
+.B mode hex
+Hexadecimal display for integers
+.TP
+.B mode bin
+Binary display for integers
+.TP
+.B mode frac
+Fraction display (e.g., 1/3 instead of 0.333...)
+.TP
+.B mode ieee
+Educational IEEE floating-point breakdown
+.SS Display Functions
+One-off display without changing mode:
+.TP
+.B ieee(x) \fRor\fB explain(x)
+Show detailed IEEE-style floating-point breakdown with sign bit,
+exponent, mantissa in binary and decimal, and step-by-step calculation.
+Excellent for teaching how floating-point numbers work.
+.TP
+.B printhex(x)
+Display x in hexadecimal
+.TP
+.B printbin(x)
+Display x in binary
+.SS Precision
+.TP
+.B digits \fIn\fR
+Set display precision (1 to 38 significant figures)
+.SS Base Conversion Commands
+.TP
+.B hex \fIvalue\fR
+Display value in hexadecimal
+.TP
+.B bin \fIvalue\fR
+Display value in binary
+.TP
+.B oct \fIvalue\fR
+Display value in octal
+.SH RPN MODE
+.B sc
+supports Reverse Polish Notation (RPN) mode for HP calculator-style input.
+.TP
+.B rpn
+Enter RPN mode
+.TP
+.B exit \fRor\fB quit
+Exit RPN mode (return to algebraic)
+.PP
+In RPN mode, enter numbers followed by operators:
+.PP
+.RS
+RPN> 3
+.br
+RPN> 4
+.br
+RPN> +
+.br
+= 7
+.br
+RPN> 2
+.br
+RPN> *
+.br
+= 14
+.RE
+.SS RPN Stack Commands
+.TP
+.B dup
+Duplicate top of stack
+.TP
+.B drop
+Remove top of stack
+.TP
+.B swap
+Swap top two elements
+.TP
+.B clr
+Clear the stack
+.TP
+.B stack
+Show entire stack
+.SH PLOTTING
+ASCII plots for quick visualization. Plot any expression with a specified variable:
+.TP
+.B plot \fIexpr\fB \fIvar\fB=\fImin\fB:\fImax\fR
+Plot expression over range, using any variable name
+.TP
+.B plot \fIexpr\fB \fImin\fB:\fImax\fR
+Plot expression over range (assumes variable x)
+.TP
+.B plot \fIexpr\fR
+Plot expression from -10 to 10 (assumes variable x)
+.PP
+Examples:
+.PP
+.RS
+.nf
+>>> plot sin(x) x=-3.14:3.14
+>>> plot sin(t)+cos(t) t=-3:3
+>>> plot x^2 x=-5:5
+>>> plot isprime(n) n=0:100
+>>> f(x)=sin(x)/x
+>>> plot f(y) y=-10:10
+.fi
+.RE
+.SH PIPE MODE
+When input is piped or redirected,
+.B sc
+runs in quiet mode without prompts or the "= " prefix:
+.PP
+.RS
+$ echo "sqrt(2)" | sc
+.br
+1.41421356237...
+.br
+$ echo "2+2" | sc
+.br
+4
+.RE
+.SH EXAMPLES
+.SS Basic Calculations
+.PP
+.RS
 >>> 2 + 3 * 4
 .br
 = 14
-.TP
-Complex numbers:
->>> sqrt(\-1)
 .br
-= i
+>>> (1 + sqrt(5)) / 2
 .br
->>> (1+2i) * (3\-4i)
+= 1.6180339887... (golden ratio)
 .br
-= 11+2i
-.TP
-Euler's identity:
->>> exp(i*pi) + 1
+>>> 100 * (1.05)^10
 .br
-= 0
-.TP
-Previous answer:
->>> 1/3
+= 162.889462678...
+.RE
+.SS Complex Numbers
+.PP
+.RS
+>>> (1 + i)^10
 .br
-= 0.3333333333333333
+= 32i
 .br
->>> ans * 3
+>>> e^(i*pi)
 .br
-= 1
-.TP
-Multiple expressions:
->>> 2+3; ans*2
-.br
-= 10
-.TP
-Hexadecimal input:
->>> 0xFF + 1
-.br
-= 256
-.TP
-Matrix operations:
->>> A = [1,2;3,4]
+= -1
+.RE
+.SS Matrix Operations
+.PP
+.RS
+>>> A = [1 2 3; 4 5 6; 7 8 10]
 .br
 >>> det(A)
 .br
-= \-2
+= -3
 .br
->>> inv(A)
-.SH MODES
+>>> inv(A) * A
+.br
+   1   0   0
+.br
+   0   1   0
+.br
+   0   0   1
+.RE
+.SS Solving Systems of Equations
+.PP
+Solve: 2x + y = 5, x - y = 1
+.PP
+.RS
+>>> A = [2 1; 1 -1]
+.br
+>>> b = [5; 1]
+.br
+>>> A \\\\ b
+.br
+   2
+.br
+   1
+.RE
+.SH IEEE 754 COMPLIANCE
+.B sc
+implements IEEE 754-2008 compliant special value handling:
+.PP
+.RS
+>>> 1/0
+.br
+= inf
+.br
+>>> -1/0
+.br
+= -inf
+.br
+>>> 0/0
+.br
+= nan
+.br
+>>> inf - inf
+.br
+= nan
+.br
+>>> inf + inf
+.br
+= inf
+.br
+>>> 0 * inf
+.br
+= nan
+.RE
+.SH FILES
 .TP
-.B rpn
-Reverse Polish Notation mode (HP calculator style)
+.I ~/.scrc
+User configuration file (future feature)
+.SH ENVIRONMENT
 .TP
-.B tvm
-Time Value of Money calculations
-.TP
-.B stat
-Statistical calculations with data entry
+.B SC_DIGITS
+Default display precision
 .SH EXIT STATUS
 .TP
 .B 0
 Success
 .TP
 .B 1
-Error in expression or calculation
-.SH NOTES
-.B log()
-and
-.B ln()
-both compute the natural logarithm. Use
-.B log10()
-for base-10 logarithm.
-.PP
-Exponentiation is right-associative: 2^3^2 = 2^(3^2) = 512
-.PP
-The
-.B ans
-variable is updated after each expression, including those
-separated by semicolons.
-.SH IEEE 754 COMPLIANCE
-.B sc
-implements IEEE 754-2008 compliant arithmetic including proper handling of:
-.IP \(bu 2
-Infinity (+Inf, \-Inf)
-.IP \(bu 2
-Not-a-Number (NaN)
-.IP \(bu 2
-Signed zero (+0, \-0)
-.IP \(bu 2
-Special function domain errors
+Error in expression or command
 .SH SEE ALSO
 .BR bc (1),
 .BR dc (1),
 .BR calc (1)
-.SH AUTHOR
-Written by Stu.
-.SH COPYRIGHT
-Copyright \(co 2024. License: MIT.
+.SH HOMEPAGE
+https://github.com/dr-who/sc
 .SH BUGS
-Report bugs to the project repository.
+Report bugs to: https://github.com/dr-who/sc/issues
+.SH AUTHOR
+Written for DOS and modern Unix systems.
+.SH COPYRIGHT
+This is free software; see the source for copying conditions.

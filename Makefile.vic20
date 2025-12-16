@@ -1,0 +1,82 @@
+# Makefile.vic20 - sc Scientific Calculator for VIC-20 using cc65
+#
+# Requirements:
+#   - cc65 cross-compiler suite (https://cc65.github.io/)
+#   - Install: apt install cc65 (Linux) or brew install cc65 (macOS)
+#
+# Usage:
+#   make -f Makefile.vic20           # Build sc.prg (64-bit, fits in 5KB)
+#   make -f Makefile.vic20 sc-32     # Build 32-bit version (smaller)
+#   make -f Makefile.vic20 clean
+#
+# The resulting .prg file can be loaded in VICE emulator or real hardware
+
+# cc65 toolchain
+CC = cl65
+AS = ca65
+LD = ld65
+
+# Target system
+SYSTEM = vic20
+
+# Compiler flags
+# -t vic20     : Target VIC-20
+# -O           : Optimize for size
+# -Os          : Optimize for size (aggressive)
+# --static-locals : Put locals in static memory (saves stack)
+CFLAGS = -t $(SYSTEM) -O -Os --static-locals -DSCALC_VIC20
+
+# Linker flags - use 8K expansion config for more RAM
+# VIC-20 memory configs:
+#   vic20       : Unexpanded (3.5KB usable) - very tight
+#   vic20-8k    : 8KB expansion (11.5KB usable)
+#   vic20-16k   : 16KB expansion
+#   vic20-32k   : 32KB expansion
+LDFLAGS = -t $(SYSTEM) -C vic20-8k.cfg
+
+# Minimal source files for VIC-20 (no matrices, no stats, minimal features)
+# Core arithmetic only - fits in limited RAM
+SRC = src/apf.c src/apfx.c src/apfc.c \
+      src/lexer.c src/parser.c src/runtime.c \
+      src/format.c src/commands.c src/repl.c \
+      src/rpn.c src/main.c
+
+# Object files
+OBJ = $(SRC:.c=.o)
+
+# Default: 64-bit version (best balance of precision vs size)
+all: sc.prg
+
+# 64-bit version (4 limbs, ~19 decimal digits)
+sc.prg: $(SRC)
+	$(CC) $(CFLAGS) $(LDFLAGS) -DAP_LIMBS=4 -o sc.prg $(SRC)
+	@echo ""
+	@echo "Built sc.prg for VIC-20 (64-bit, 19 decimal digits)"
+	@echo "Load in VICE: x64 then LOAD\"SC.PRG\",8,1 and RUN"
+
+# 32-bit version (2 limbs, ~9 decimal digits) - smallest
+sc-32.prg: $(SRC)
+	$(CC) $(CFLAGS) $(LDFLAGS) -DAP_LIMBS=2 -o sc-32.prg $(SRC)
+	@echo ""
+	@echo "Built sc-32.prg for VIC-20 (32-bit, 9 decimal digits)"
+
+# Aliases
+sc: sc.prg
+sc-32: sc-32.prg
+sc-64: sc.prg
+
+# Clean
+clean:
+	rm -f *.o *.prg src/*.o
+
+# Show memory map (useful for debugging size issues)
+map: sc.prg
+	@echo "Memory usage analysis would go here"
+	@ls -la sc.prg
+
+# Test in VICE emulator (if installed)
+test: sc.prg
+	@command -v xvic >/dev/null 2>&1 || { echo "VICE emulator (xvic) not found"; exit 1; }
+	xvic -autostartprgmode 1 sc.prg
+
+.PHONY: all sc sc-32 sc-64 clean map test

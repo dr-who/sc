@@ -6,11 +6,14 @@
 /* Global state */
 calc_mode_t current_mode = MODE_DECIMAL;
 int display_digits = DEFAULT_DIGITS;  /* Default 16 significant figures */
+int display_fixed_places = 6;         /* Default 6 decimal places for FIX/SCI/ENG */
 value_t last_ans;      /* Previous answer */
 int last_ans_valid = 0;  /* Is last_ans set? */
+int result_is_boolean = 0; /* Result should be displayed as true/false */
+int angle_mode = ANGLE_RAD; /* 0=radians (default), 1=degrees, 2=gradians */
 user_func_t user_funcs[MAX_FUNCTIONS];
 scalar_var_t scalar_vars[MAX_SCALAR_VARS];
-matrix_var_t matrix_vars[MAX_MATRIX_VARS];
+matrix_var_t SC_FAR matrix_vars[MAX_MATRIX_VARS];
 
 /* ========== Utility Functions ========== */
 
@@ -221,7 +224,141 @@ int eval_user_func(apfc *result, int func_idx, const apfc *arg)
     return ok;
 }
 
+/* Evaluate an arbitrary expression with x substituted */
+int eval_expr_with_x(apfc *result, const char *expr, const apfc *x_val)
+{
+    const char *saved_input;
+    token_t saved_token;
+    int ok;
+    
+    saved_input = input_ptr;
+    saved_token = current_token;
+    param_value_c = *x_val;
+    param_name = 'x';
+    in_user_func = 1;
+    
+    input_ptr = expr;
+    next_token();
+    ok = parse_expr(result);
+    
+    in_user_func = 0;
+    input_ptr = saved_input;
+    current_token = saved_token;
+    
+    return ok;
+}
+
+/* Evaluate an arbitrary expression with any variable substituted */
+int eval_expr_with_var(apfc *result, const char *expr, char var_name, const apfc *val)
+{
+    const char *saved_input;
+    token_t saved_token;
+    int ok;
+    
+    saved_input = input_ptr;
+    saved_token = current_token;
+    param_value_c = *val;
+    param_name = var_name;
+    in_user_func = 1;
+    
+    input_ptr = expr;
+    next_token();
+    ok = parse_expr(result);
+    
+    in_user_func = 0;
+    input_ptr = saved_input;
+    current_token = saved_token;
+    
+    return ok;
+}
+
 /* Accessors for parser module */
 int is_in_user_func(void) { return in_user_func; }
 char get_param_name(void) { return param_name; }
 apfc *get_param_value(void) { return &param_value_c; }
+
+/* ========== Named Variables (MATLAB compatibility) ========== */
+#ifdef HAVE_NAMED_VARS
+
+named_var_t named_vars[MAX_NAMED_VARS];
+
+void init_named_vars(void)
+{
+    int i;
+    for (i = 0; i < MAX_NAMED_VARS; i++) {
+        named_vars[i].defined = 0;
+        named_vars[i].name[0] = '\0';
+    }
+}
+
+int find_named_var(const char *name)
+{
+    int i;
+    for (i = 0; i < MAX_NAMED_VARS; i++) {
+        if (named_vars[i].defined && str_eq(named_vars[i].name, name)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int create_named_var(const char *name)
+{
+    int i, idx;
+    size_t len;
+    
+    /* Check if already exists */
+    idx = find_named_var(name);
+    if (idx >= 0) return idx;
+    
+    /* Find empty slot */
+    for (i = 0; i < MAX_NAMED_VARS; i++) {
+        if (!named_vars[i].defined) {
+            len = strlen(name);
+            if (len >= MAX_VAR_NAME) len = MAX_VAR_NAME - 1;
+            memcpy(named_vars[i].name, name, len);
+            named_vars[i].name[len] = '\0';
+            named_vars[i].defined = 1;
+            return i;
+        }
+    }
+    
+    printf("Error: too many named variables (max %d)\n", MAX_NAMED_VARS);
+    return -1;
+}
+
+int set_named_scalar(const char *name, const apfc *val)
+{
+    int idx = create_named_var(name);
+    if (idx < 0) return 0;
+    
+    named_vars[idx].type = VAL_SCALAR;
+    named_vars[idx].val.scalar = *val;
+    return 1;
+}
+
+int set_named_matrix(const char *name, const matrix_t *val)
+{
+    int idx = create_named_var(name);
+    if (idx < 0) return 0;
+    
+    named_vars[idx].type = VAL_MATRIX;
+    named_vars[idx].val.matrix = *val;
+    return 1;
+}
+
+int get_named_var(const char *name, value_t *result)
+{
+    int idx = find_named_var(name);
+    if (idx < 0) return 0;
+    
+    result->type = named_vars[idx].type;
+    if (named_vars[idx].type == VAL_SCALAR) {
+        result->v.scalar = named_vars[idx].val.scalar;
+    } else {
+        result->v.matrix = named_vars[idx].val.matrix;
+    }
+    return 1;
+}
+
+#endif /* HAVE_NAMED_VARS */

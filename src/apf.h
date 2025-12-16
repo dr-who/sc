@@ -1,34 +1,24 @@
 /* apf.h - Arbitrary Precision Float (soft float)
- * C89 compliant for Watcom C / DOS
- * Uses only 16/32-bit arithmetic
+ * Pure C89, standalone library - no external dependencies
+ * Uses only 16/32-bit integer arithmetic
+ * No float, double, or stdio
  */
 #ifndef APF_H
 #define APF_H
-
-#include <stdlib.h>
-#include "config.h"
 
 /*
  * Portable integer types for 16-bit DOS compatibility.
  * On DOS (Watcom C): int=16-bit, long=32-bit
  * On modern systems: int=32-bit, long=32/64-bit
- *
- * USE THESE to make overflow risks visible:
- *   INT16: max 32767 - BEWARE: n*n overflows at n>181, 2*n*k overflows easily
- *   INT32: max 2147483647 - safe for most intermediate calculations
- *
- * Rule: When you see INT16, think "can this overflow?"
  */
 typedef int  INT16;   /* 16-bit on DOS, may be larger elsewhere */
 typedef long INT32;   /* 32-bit everywhere */
-
-/* Unsigned versions */
 typedef unsigned int  UINT16;
 typedef unsigned long UINT32;
 
 /* Configuration - number of 16-bit limbs */
 #ifndef AP_LIMBS
-#define AP_LIMBS 8   /* 128 bits = 8 x 16-bit */
+#define AP_LIMBS 8   /* Default: 8 x 16-bit = 128 bits */
 #endif
 
 #define AP_BITS (AP_LIMBS * 16)
@@ -74,15 +64,12 @@ void apf_set_min(apf *x);      /* smallest positive non-zero */
 #define APF_EXP_MAX  2147483647L
 #define APF_EXP_MIN  (-2147483647L - 1L)
 
-/* Double conversion (for interfacing with native math) */
-void apf_from_double(apf *r, double d);
-double apf_to_double(const apf *a);
-
 /* Normalization */
 void apf_norm(apf *x);
 
 /* Comparison */
 int apf_cmp(const apf *a, const apf *b);
+int apf_cmp_int(const apf *a, long n);
 int apf_eq(const apf *a, const apf *b);
 int apf_ne(const apf *a, const apf *b);
 int apf_lt(const apf *a, const apf *b);
@@ -97,7 +84,21 @@ void apf_add(apf *r, const apf *a, const apf *b);
 void apf_sub(apf *r, const apf *a, const apf *b);
 void apf_mul(apf *r, const apf *a, const apf *b);
 void apf_div(apf *r, const apf *a, const apf *b);
+void apf_mod(apf *r, const apf *a, const apf *b);
 void apf_sqrt(apf *r, const apf *a);
+
+/* Bitwise operations */
+void apf_lsl(apf *r, const apf *a, int shift);
+void apf_lsr(apf *r, const apf *a, int shift);
+void apf_band(apf *r, const apf *a, const apf *b);
+void apf_bor(apf *r, const apf *a, const apf *b);
+void apf_bxor(apf *r, const apf *a, const apf *b);
+void apf_bnot(apf *r, const apf *a);
+
+/* Rounding */
+void apf_trunc(apf *r, const apf *a);
+void apf_floor(apf *r, const apf *a);
+void apf_ceil(apf *r, const apf *a);
 
 /* Random */
 void apf_random(apf *r);
@@ -116,7 +117,7 @@ int apf_get_round_mode(void);
 char *apf_to_str(char *buf, int bufsize, const apf *val, int max_digits);
 void apf_from_str(apf *x, const char *s);
 
-/* Debug */
-void apf_dump(const apf *x, void *fp);
+/* Debug - dump internal representation to string buffer */
+char *apf_dump_str(char *buf, int bufsize, const apf *x);
 
 #endif /* APF_H */

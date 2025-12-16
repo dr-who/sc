@@ -6,6 +6,9 @@
 #include "matrix.h"
 #include "apfx.h"
 
+/* Global display digits setting */
+extern int display_digits;
+
 /* ========== Initialization ========== */
 
 void mat_init(matrix_t *m, int rows, int cols)
@@ -507,11 +510,43 @@ void mat_print(const matrix_t *m)
 {
     int i, j;
     static char buf[128];
+    int digits = display_digits ? display_digits : 10;  /* Default 10 for matrix display */
+    apf max_val, threshold, abs_val, eps;
+    
+    /* Find maximum absolute value in matrix for threshold calculation */
+    apf_zero(&max_val);
+    for (i = 0; i < m->rows; i++) {
+        for (j = 0; j < m->cols; j++) {
+            apfc_abs(&abs_val, &MAT_AT(m, i, j));
+            if (apf_cmp(&abs_val, &max_val) > 0) {
+                max_val = abs_val;
+            }
+        }
+    }
+    
+    /* threshold = max_val * eps where eps = 10^-14 */
+    /* Build eps = 10^-14 properly */
+    apf_from_int(&eps, 10);
+    {
+        apf exp;
+        apf_from_int(&exp, -14);
+        apfx_pow(&eps, &eps, &exp);
+    }
+    apf_mul(&threshold, &eps, &max_val);
     
     for (i = 0; i < m->rows; i++) {
         for (j = 0; j < m->cols; j++) {
-            apfc_to_str(buf, sizeof(buf), &MAT_AT(m, i, j), 0);
-            printf("%12s", buf);
+            apfc val = MAT_AT(m, i, j);
+            
+            /* Clean up near-zero values relative to matrix magnitude */
+            apfc_abs(&abs_val, &val);
+            if (apf_cmp(&abs_val, &threshold) < 0 && !apf_is_zero(&max_val)) {
+                apf_zero(&val.re);
+                apf_zero(&val.im);
+            }
+            
+            apfc_to_str(buf, sizeof(buf), &val, digits);
+            printf("%s", buf);
             if (j < m->cols - 1) printf("  ");
         }
         printf("\n");
@@ -523,13 +558,44 @@ void mat_to_str(char *buf, int bufsize, const matrix_t *m)
     int i, j, pos = 0;
     static char elem[128];
     int len;
+    int digits = display_digits ? display_digits : 10;
+    apf max_val, threshold, abs_val, eps;
+    
+    /* Find maximum absolute value in matrix for threshold calculation */
+    apf_zero(&max_val);
+    for (i = 0; i < m->rows; i++) {
+        for (j = 0; j < m->cols; j++) {
+            apfc_abs(&abs_val, &MAT_AT(m, i, j));
+            if (apf_cmp(&abs_val, &max_val) > 0) {
+                max_val = abs_val;
+            }
+        }
+    }
+    
+    /* threshold = max_val * eps where eps = 10^-14 */
+    apf_from_int(&eps, 10);
+    {
+        apf exp;
+        apf_from_int(&exp, -14);
+        apfx_pow(&eps, &eps, &exp);
+    }
+    apf_mul(&threshold, &eps, &max_val);
     
     buf[0] = '[';
     pos = 1;
     
     for (i = 0; i < m->rows && pos < bufsize - 10; i++) {
         for (j = 0; j < m->cols && pos < bufsize - 10; j++) {
-            apfc_to_str(elem, sizeof(elem), &MAT_AT(m, i, j), 0);
+            apfc val = MAT_AT(m, i, j);
+            
+            /* Clean up near-zero values relative to matrix magnitude */
+            apfc_abs(&abs_val, &val);
+            if (apf_cmp(&abs_val, &threshold) < 0 && !apf_is_zero(&max_val)) {
+                apf_zero(&val.re);
+                apf_zero(&val.im);
+            }
+            
+            apfc_to_str(elem, sizeof(elem), &val, digits);
             len = strlen(elem);
             if (pos + len < bufsize - 2) {
                 strcpy(buf + pos, elem);

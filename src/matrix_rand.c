@@ -103,8 +103,15 @@ void rand_int(apfc *r, long imax)
         return;
     }
     
+    /* LCG low bits have short periods, so we use high bits.
+     * For small ranges, >> 16 gives best quality (top 16 bits).
+     * For large ranges, >> 1 uses top 31 bits. */
     rval = rand_next();
-    result = (long)(rval % (unsigned long)imax) + 1;
+    if ((unsigned long)imax <= 65535UL) {
+        result = (long)((rval >> 16) % (unsigned long)imax) + 1;
+    } else {
+        result = (long)((rval >> 1) % (unsigned long)imax) + 1;
+    }
     
     apf_from_int(&r->re, result);
     apf_zero(&r->im);
@@ -114,7 +121,8 @@ void rand_int(apfc *r, long imax)
 void rand_int_range(apfc *r, long imin, long imax)
 {
     unsigned long rval;
-    long range, result;
+    unsigned long range;
+    long result;
     
     if (imax < imin) {
         long tmp = imin;
@@ -122,15 +130,23 @@ void rand_int_range(apfc *r, long imin, long imax)
         imax = tmp;
     }
     
-    range = imax - imin + 1;
-    if (range <= 0) {
-        apf_from_int(&r->re, imin);
+    /* Calculate range as unsigned to avoid overflow */
+    range = (unsigned long)imax - (unsigned long)imin + 1UL;
+    if (range == 0) {
+        /* Overflow: range is 2^32, just use raw random */
+        rval = rand_next();
+        apf_from_int(&r->re, (long)(rval >> 1));
         apf_zero(&r->im);
         return;
     }
     
+    /* LCG low bits have short periods, so we use high bits */
     rval = rand_next();
-    result = imin + (long)(rval % (unsigned long)range);
+    if (range <= 65535UL) {
+        result = imin + (long)((rval >> 16) % range);
+    } else {
+        result = imin + (long)((rval >> 1) % range);
+    }
     
     apf_from_int(&r->re, result);
     apf_zero(&r->im);

@@ -11,15 +11,24 @@ void print_help(void)
     printf("\nsc - Scientific Calculator\n");
     printf("Precision: %d bits (~%d decimal digits)\n\n", AP_BITS, dd);
     printf("Operators: + - * / ^ (power) ! (factorial)\n");
-    printf("Constants: pi e i Inf NaN ans (previous answer)\n");
-    printf("Functions: sin cos tan asin acos atan exp log ln sqrt abs\n");
-    printf("           sinh cosh tanh arg conj re im fact\n");
-    printf("           print printhex printbin\n\n");
+    printf("           and or xor not (boolean)\n");
+    printf("Comparisons: = == <> < <= > >= ~= (approx)\n");
+    printf("Constants: pi e i Inf NaN ans (previous answer)\n\n");
+    printf("Trig: sin cos tan asin acos atan atan2\n");
+    printf("      sec csc cot asec acsc acot\n");
+    printf("Hyperbolic: sinh cosh tanh asinh acosh atanh\n");
+    printf("Math: exp log ln log10 logb sqrt abs floor ceil\n");
+    printf("      gcd lcm nPr nCr isprime fact\n");
+    printf("Complex: arg conj re im\n\n");
+    printf("Angle Modes:\n");
+    printf("  deg              - use degrees\n");
+    printf("  rad              - use radians (default)\n");
+    printf("  grad             - use gradians\n\n");
     printf("Number formats:\n");
     printf("  123, 3.14, 1.5e-3  - decimal / scientific\n");
     printf("  0xFF, 0xDEAD       - hexadecimal\n");
     printf("  0b1010             - binary\n");
-    printf("  MCMXCIX, MMXXV     - Roman numerals\n\n");
+    printf("  1.23e-4            - Scientific notation\n\n");
     printf("Variables & Functions:\n");
     printf("  x = 10             - assign variable\n");
     printf("  f(x) = x^2         - define function\n");
@@ -28,38 +37,115 @@ void print_help(void)
     printf("RPN Mode (HP-style):\n");
     printf("  rpn                - switch to RPN mode\n");
     printf("  alg                - switch to algebraic mode\n");
-    printf("  5 3 + 2 *          - (5+3)*2 = 16\n");
-    printf("  drop swap dup .s   - stack commands\n\n");
+    printf("  5 3 + 2 *          - (5+3)*2 = 16\n\n");
 #endif
 #ifdef HAVE_SOLVER
     printf("Solvers:\n");
-    printf("  quad a b c         - solve ax^2+bx+c=0\n");
-    printf("  quad 1 -5 6        - x=2, x=3\n");
-    printf("  quad 1 0 1         - x=i, x=-i (complex roots)\n\n");
+    printf("  quad a b c         - solve ax^2+bx+c=0\n\n");
 #endif
-    printf("Matrices (max %dx%d):\n", MAT_MAX_ROWS, MAT_MAX_COLS);
-    printf("  A = [1 2; 3 4]     - create matrix\n");
-    printf("  eye(3), zeros(3)   - special matrices\n");
-    printf("  det(A), inv(A), transpose(A), eig(A)\n\n");
-    printf("Plotting:\n");
-    printf("  plot f -5:5        - plot function f(x)\n");
-    printf("  lorenz             - Lorenz attractor\n");
-    printf("  lorenz 10 28 2.67  - custom sigma/rho/beta\n");
-    printf("  rossler            - Rossler attractor\n");
-    printf("  parametric f g 0:6.28 - parametric x=f(t), y=g(t)\n\n");
-    printf("Display:\n");
-    printf("  digits N           - show N significant figures (0=max)\n");
-    printf("  digits             - show current setting\n");
-    printf("  round MODE         - nearest/ceil/floor/trunc/away\n\n");
-    printf("Command-line:\n");
-    printf("  sc \"1+2\"        - evaluate expression\n");
-    printf("  echo \"1/3\" | sc - pipe expressions\n\n");
-    printf("Commands: help, test, bench, quit, date\n\n");
-    printf("Examples:\n");
-    printf("  sqrt(-1)           = i\n");
-    printf("  exp(i*pi)+1        = 0  (Euler's identity)\n");
-    printf("  2^1000             = 1.07e+301\n");
-    printf("  1/3; ans*3         = 1  (previous answer)\n\n");
+    printf("Matrices: A=[1 2;3 4] eye(n) zeros(n) det inv eig\n");
+    printf("MATLAB:   sort unique reshape sum mean std var\n");
+    printf("          isrow iscolumn issquare issorted\n");
+    printf("          triu tril union intersect setdiff\n");
+    printf("          sind cosd secd asecd nthroot realsqrt\n");
+    printf("Plotting: plot EXPR var=min:max  (e.g. plot sin(x) x=-3:3)\n");
+    printf("Display: digits N, mode dec/hex/bin/frac/ieee\n\n");
+    printf("Shell: if sc \"isprime(17)\"; then echo prime; fi\n");
+    printf("Commands: help demo features constants test bench quit\n\n");
+}
+
+/* ========== Constants ========== */
+
+void print_constants(void)
+{
+    apf val, tmp;
+    char buf[128];
+    int digits = display_digits > 0 ? display_digits : MAX_DISPLAY_DIGITS;
+    
+    printf("\nMathematical Constants (%d-bit precision, showing %d digits)\n", AP_BITS, digits);
+    printf("============================================================\n\n");
+    
+    /* Pi */
+    apfx_pi(&val);
+    apf_to_str(buf, sizeof(buf), &val, digits);
+    printf("pi       = %s\n", buf);
+    printf("           (ratio of circumference to diameter)\n\n");
+    
+    /* e */
+    apfx_e(&val);
+    apf_to_str(buf, sizeof(buf), &val, digits);
+    printf("e        = %s\n", buf);
+    printf("           (base of natural logarithm)\n\n");
+    
+    /* ln(2) = log(2) */
+    apf_from_int(&tmp, 2);
+    apfx_log(&val, &tmp);
+    apf_to_str(buf, sizeof(buf), &val, digits);
+    printf("ln(2)    = %s\n", buf);
+    printf("           (natural log of 2)\n\n");
+    
+    /* sqrt(2) = 2^0.5 */
+    apf_from_int(&tmp, 2);
+    apf_from_str(&val, "0.5");
+    apfx_pow(&val, &tmp, &val);
+    apf_to_str(buf, sizeof(buf), &val, digits);
+    printf("sqrt(2)  = %s\n", buf);
+    printf("           (Pythagoras' constant)\n\n");
+    
+    /* sqrt(3) = 3^0.5 */
+    apf_from_int(&tmp, 3);
+    apf_from_str(&val, "0.5");
+    apfx_pow(&val, &tmp, &val);
+    apf_to_str(buf, sizeof(buf), &val, digits);
+    printf("sqrt(3)  = %s\n", buf);
+    printf("           (Theodorus' constant)\n\n");
+    
+    /* Golden ratio phi = (1+sqrt(5))/2 */
+    {
+        apf five, one, two, half;
+        apf_from_int(&five, 5);
+        apf_from_int(&one, 1);
+        apf_from_int(&two, 2);
+        apf_from_str(&half, "0.5");
+        apfx_pow(&val, &five, &half);  /* sqrt(5) */
+        apf_add(&val, &val, &one);      /* 1 + sqrt(5) */
+        apf_div(&val, &val, &two);      /* (1+sqrt(5))/2 */
+    }
+    apf_to_str(buf, sizeof(buf), &val, digits);
+    printf("phi      = %s\n", buf);
+    printf("           (golden ratio, (1+sqrt(5))/2)\n\n");
+    
+    /* 2/sqrt(pi) - used in erf */
+    {
+        apf two, sqrtpi, half;
+        apf_from_int(&two, 2);
+        apfx_pi(&sqrtpi);
+        apf_from_str(&half, "0.5");
+        apfx_pow(&sqrtpi, &sqrtpi, &half);  /* sqrt(pi) */
+        apf_div(&val, &two, &sqrtpi);        /* 2/sqrt(pi) */
+    }
+    apf_to_str(buf, sizeof(buf), &val, digits);
+    printf("2/sqrt(pi) = %s\n", buf);
+    printf("           (used in error function)\n\n");
+    
+    /* Euler-Mascheroni gamma */
+#if defined(SCALC_MEDIUM) || defined(SCALC_TINY) || defined(SCALC_MINIMAL) || defined(SCALC_VIC20)
+    apf_from_str(&val, "0.5772156649015328606065120900824024310421");
+#else
+    apf_from_str(&val, "0.57721566490153286060651209008240243104215933593992359880576723488486772677766467093694706329174674951");
+#endif
+    apf_to_str(buf, sizeof(buf), &val, digits);
+    printf("gamma    = %s\n", buf);
+    printf("           (Euler-Mascheroni constant)\n\n");
+    
+    /* ln(10) */
+    apf_from_int(&tmp, 10);
+    apfx_log(&val, &tmp);
+    apf_to_str(buf, sizeof(buf), &val, digits);
+    printf("ln(10)   = %s\n", buf);
+    printf("           (natural log of 10)\n\n");
+    
+    printf("Use 'digits N' to change display precision (max %d)\n", MAX_DISPLAY_DIGITS);
 }
 
 /* ========== Mode ========== */
@@ -69,15 +155,34 @@ void handle_mode(const char *input)
     const char *arg = input + 4;
     while (*arg == ' ' || *arg == '\t') arg++;
     if (*arg == '\0') {
-        printf("Current mode: %s\n", current_mode == MODE_DECIMAL ? "decimal" : "fraction");
+        const char *mode_name;
+        switch (current_mode) {
+            case MODE_DECIMAL:  mode_name = "decimal"; break;
+            case MODE_FRACTION: mode_name = "fraction"; break;
+            case MODE_HEX:      mode_name = "hex"; break;
+            case MODE_BIN:      mode_name = "bin"; break;
+            case MODE_IEEE:     mode_name = "ieee (educational)"; break;
+            default:            mode_name = "unknown"; break;
+        }
+        printf("Current mode: %s\n", mode_name);
+        printf("Available: dec, frac, hex, bin, ieee\n");
     } else if (str_starts(arg, "dec")) {
         current_mode = MODE_DECIMAL;
-        printf("Switched to decimal mode\n");
+        printf("Display: decimal\n");
     } else if (str_starts(arg, "frac")) {
         current_mode = MODE_FRACTION;
-        printf("Switched to fraction mode (not yet implemented for complex)\n");
+        printf("Display: fraction\n");
+    } else if (str_starts(arg, "hex")) {
+        current_mode = MODE_HEX;
+        printf("Display: hexadecimal\n");
+    } else if (str_starts(arg, "bin")) {
+        current_mode = MODE_BIN;
+        printf("Display: binary\n");
+    } else if (str_starts(arg, "ieee") || str_starts(arg, "edu")) {
+        current_mode = MODE_IEEE;
+        printf("Display: IEEE educational breakdown\n");
     } else {
-        printf("Unknown mode. Use 'decimal' or 'fraction'\n");
+        printf("Unknown mode. Use: dec, frac, hex, bin, ieee\n");
     }
 }
 
@@ -623,19 +728,6 @@ void run_tests(void)
         {"0xFF+0b1", "256", 0},
         {"0x10*0x10", "256", 0},
         
-        /* Roman numerals */
-        {"I", "1", 0},
-        {"IV", "4", 0},
-        {"IX", "9", 0},
-        {"XL", "40", 0},
-        {"XC", "90", 0},
-        {"CD", "400", 0},
-        {"CM", "900", 0},
-        {"MCMXCIX", "1999", 0},
-        {"MMXXV", "2025", 0},
-        {"MCM+XXV", "1925", 0},
-        {"MMMCMXCIX", "3999", 0},
-        
         /* Large exponents - should be fast */
         {"2^1000000", "9.9e+301029", 1},          /* large but finite */
         {"2^-1000000", "1.01e-301030", 1},        /* small but not zero */
@@ -652,6 +744,18 @@ void run_tests(void)
         {"-2^1000000000000000000000000000000", "-Inf", 0},    /* negative of Inf */
         {"(0.5)^1000000000000000000000000000000", "0", 0},    /* base<1, huge exp -> 0 */
         {"(0.5)^(-1000000000000000000000000000000)", "Inf", 0}, /* base<1, huge neg exp -> Inf */
+        
+        /* isprime function */
+        {"isprime(2)", "1", 0},
+        {"isprime(3)", "1", 0},
+        {"isprime(4)", "0", 0},
+        {"isprime(7)", "1", 0},
+        {"isprime(9)", "0", 0},
+        {"isprime(11)", "1", 0},
+        {"isprime(101)", "1", 0},
+        {"isprime(100)", "0", 0},
+        {"isprime(1009)", "1", 0},
+        {"isprime(1000)", "0", 0},
         
         {NULL, NULL, 0}
     };
@@ -824,7 +928,7 @@ void run_bench(void)
     } else {
         elapsed_ms = 0;
     }
-    printf("  128-bit mul:       %ld ms (%d iters)\n", elapsed_ms, actual_iters);
+    printf("  %d-bit mul:       %ld ms (%d iters)\n", AP_BITS, elapsed_ms, actual_iters);
     
     start = clock();
     actual_iters = 0;
@@ -840,7 +944,668 @@ void run_bench(void)
     } else {
         elapsed_ms = 0;
     }
-    printf("  128-bit div:       %ld ms (%d iters)\n", elapsed_ms, actual_iters);
+    printf("  %d-bit div:       %ld ms (%d iters)\n", AP_BITS, elapsed_ms, actual_iters);
     
     printf("\n");
+}
+
+/* ========== Features ========== */
+
+void print_features(void)
+{
+    printf("\nFeature Flags (%d-bit precision)\n", AP_BITS);
+    printf("================================\n\n");
+    
+    /* Core */
+#ifdef HAVE_SQRT
+    printf("  HAVE_SQRT          = true\n");
+#else
+    printf("  HAVE_SQRT          = false\n");
+#endif
+#ifdef HAVE_EXP
+    printf("  HAVE_EXP           = true\n");
+#else
+    printf("  HAVE_EXP           = false\n");
+#endif
+#ifdef HAVE_TRIG
+    printf("  HAVE_TRIG          = true\n");
+#else
+    printf("  HAVE_TRIG          = false\n");
+#endif
+#ifdef HAVE_HYPER
+    printf("  HAVE_HYPER         = true\n");
+#else
+    printf("  HAVE_HYPER         = false\n");
+#endif
+#ifdef HAVE_POW
+    printf("  HAVE_POW           = true\n");
+#else
+    printf("  HAVE_POW           = false\n");
+#endif
+#ifdef HAVE_FACTORIAL
+    printf("  HAVE_FACTORIAL     = true\n");
+#else
+    printf("  HAVE_FACTORIAL     = false\n");
+#endif
+#ifdef HAVE_COMPLEX
+    printf("  HAVE_COMPLEX       = true\n");
+#else
+    printf("  HAVE_COMPLEX       = false\n");
+#endif
+#ifdef HAVE_RPN
+    printf("  HAVE_RPN           = true\n");
+#else
+    printf("  HAVE_RPN           = false\n");
+#endif
+#ifdef HAVE_VARIABLES
+    printf("  HAVE_VARIABLES     = true\n");
+#else
+    printf("  HAVE_VARIABLES     = false\n");
+#endif
+#ifdef HAVE_USER_FUNCS
+    printf("  HAVE_USER_FUNCS    = true\n");
+#else
+    printf("  HAVE_USER_FUNCS    = false\n");
+#endif
+#ifdef HAVE_HEXBIN
+    printf("  HAVE_HEXBIN        = true\n");
+#else
+    printf("  HAVE_HEXBIN        = false\n");
+#endif
+#ifdef HAVE_ROMAN
+    printf("  HAVE_ROMAN         = true\n");
+#else
+    printf("  HAVE_ROMAN         = false\n");
+#endif
+#ifdef HAVE_BITWISE
+    printf("  HAVE_BITWISE       = true\n");
+#else
+    printf("  HAVE_BITWISE       = false\n");
+#endif
+#ifdef HAVE_COMB
+    printf("  HAVE_COMB          = true\n");
+#else
+    printf("  HAVE_COMB          = false\n");
+#endif
+#ifdef HAVE_GCD
+    printf("  HAVE_GCD           = true\n");
+#else
+    printf("  HAVE_GCD           = false\n");
+#endif
+
+    /* Phase 2 */
+#ifdef HAVE_GAMMA
+    printf("  HAVE_GAMMA         = true\n");
+#else
+    printf("  HAVE_GAMMA         = false\n");
+#endif
+#ifdef HAVE_ERF
+    printf("  HAVE_ERF           = true\n");
+#else
+    printf("  HAVE_ERF           = false\n");
+#endif
+#ifdef HAVE_BESSEL
+    printf("  HAVE_BESSEL        = true\n");
+#else
+    printf("  HAVE_BESSEL        = false\n");
+#endif
+#ifdef HAVE_ELLIPTIC
+    printf("  HAVE_ELLIPTIC      = true\n");
+#else
+    printf("  HAVE_ELLIPTIC      = false\n");
+#endif
+#ifdef HAVE_DISTRIBUTIONS
+    printf("  HAVE_DISTRIBUTIONS = true\n");
+#else
+    printf("  HAVE_DISTRIBUTIONS = false\n");
+#endif
+#ifdef HAVE_LAMBERTW
+    printf("  HAVE_LAMBERTW      = true\n");
+#else
+    printf("  HAVE_LAMBERTW      = false\n");
+#endif
+
+    /* Modules */
+#ifdef HAVE_MATRIX
+    printf("  HAVE_MATRIX        = true\n");
+#else
+    printf("  HAVE_MATRIX        = false\n");
+#endif
+#ifdef HAVE_STATS
+    printf("  HAVE_STATS         = true\n");
+#else
+    printf("  HAVE_STATS         = false\n");
+#endif
+#ifdef HAVE_SOLVER
+    printf("  HAVE_SOLVER        = true\n");
+#else
+    printf("  HAVE_SOLVER        = false\n");
+#endif
+#ifdef HAVE_TVM
+    printf("  HAVE_TVM           = true\n");
+#else
+    printf("  HAVE_TVM           = false\n");
+#endif
+#ifdef HAVE_ORBITAL
+    printf("  HAVE_ORBITAL       = true\n");
+#else
+    printf("  HAVE_ORBITAL       = false\n");
+#endif
+#ifdef HAVE_NEWTON
+    printf("  HAVE_NEWTON        = true\n");
+#else
+    printf("  HAVE_NEWTON        = false\n");
+#endif
+#ifdef HAVE_NAMED_VARS
+    printf("  HAVE_NAMED_VARS    = true\n");
+#else
+    printf("  HAVE_NAMED_VARS    = false\n");
+#endif
+#ifdef HAVE_OPTIM
+    printf("  HAVE_OPTIM         = true\n");
+#else
+    printf("  HAVE_OPTIM         = false\n");
+#endif
+
+    printf("\n");
+}
+
+/* ========== Commands ========== */
+
+void print_commands(void)
+{
+    printf("\nBuilt-in Commands\n");
+    printf("=================\n\n");
+    
+    printf("Information:\n");
+    printf("  help           Show quick help\n");
+    printf("  demo           Interactive demo\n");
+    printf("  features       List enabled features\n");
+    printf("  commands       This command list\n");
+    printf("  constants      Mathematical constants\n");
+    printf("  test           Run self-tests\n");
+    printf("  bench          Run benchmarks\n");
+    printf("  quit, exit     Exit calculator\n\n");
+    
+    printf("Variables:\n");
+    printf("  vars, who      List variables\n");
+    printf("  whos           Detailed variable info\n");
+    printf("  funcs          List user functions\n");
+    printf("  clear          Clear all variables\n");
+    printf("  clear X        Clear variable X\n\n");
+    
+    printf("Display Format:\n");
+    printf("  digits N       Set display precision\n");
+    printf("  format short   4 decimal places\n");
+    printf("  format long    15 decimal places\n");
+    printf("  format short e Scientific (4 digits)\n");
+    printf("  format long e  Scientific (15 digits)\n");
+    printf("  format bank    2 decimal places\n");
+    printf("  format rat     Fraction display\n");
+    printf("  mode dec       Decimal output\n");
+    printf("  mode hex       Hexadecimal output\n");
+    printf("  mode bin       Binary output\n");
+    printf("  mode frac      Fraction output\n");
+    printf("  mode ieee      IEEE 754 breakdown\n\n");
+    
+    printf("Angle Mode:\n");
+    printf("  deg, degrees   Use degrees\n");
+    printf("  rad, radians   Use radians (default)\n");
+    printf("  grad, gon      Use gradians\n\n");
+    
+#ifdef HAVE_RPN
+    printf("Calculator Mode:\n");
+    printf("  rpn            RPN (HP-style) mode\n");
+    printf("  alg            Algebraic mode\n\n");
+#endif
+
+#ifdef HAVE_STATS
+    printf("Statistics:\n");
+    printf("  data+ X        Add data point\n");
+    printf("  data+ X Y      Add paired data\n");
+    printf("  data- X        Remove data point\n");
+    printf("  stat           Show statistics\n\n");
+#endif
+
+#ifdef HAVE_SOLVER
+    printf("Equation Solving:\n");
+    printf("  quad a b c     Solve ax^2+bx+c=0\n");
+    printf("  solve expr=val Find root\n");
+#endif
+#ifdef HAVE_NEWTON
+    printf("  root f(x) a b  Newton's method\n");
+    printf("  nsolve f(x) x0 Numerical solve\n\n");
+#endif
+
+#ifdef HAVE_TVM
+    printf("Time Value of Money:\n");
+    printf("  n=, i=, pv=, pmt=, fv=  Set TVM vars\n");
+    printf("  n, i, pv, pmt, fv      Solve for var\n");
+    printf("  amort                  Amortization\n\n");
+#endif
+
+#ifdef HAVE_ORBITAL
+    printf("Orbital Mechanics:\n");
+    printf("  orb            Orbital calculator\n\n");
+#endif
+
+    printf("Plotting:\n");
+    printf("  plot f(x) x=a:b   ASCII function plot\n");
+    printf("  lorenz            Lorenz attractor\n\n");
+    
+    printf("Date/Time:\n");
+    printf("  date, time     Show current date/time\n\n");
+}
+
+/* ========== Demo ========== */
+
+static void wait_key(void)
+{
+    printf("\n  Press Enter to continue...");
+    fflush(stdout);
+#ifdef HAVE_CONIO
+    getch();
+#else
+    getchar();
+#endif
+    printf("\n\n");
+}
+
+static void demo_eval(const char *expr, const char *desc)
+{
+    apfc result;
+    char buf[128];
+    
+    printf("  %s\n", desc);
+    printf("  >>> %s\n", expr);
+    
+    input_ptr = expr;
+    next_token();
+    if (parse_expr(&result) && current_token.type == TOK_END) {
+        apfc_to_str(buf, sizeof(buf), &result, display_digits > 0 ? display_digits : 10);
+        printf("  = %s\n", buf);
+    } else {
+        printf("  (error)\n");
+    }
+}
+
+/* Each demo section guarded to save space on constrained platforms */
+
+static void demo_basic(void)
+{
+    printf("BASIC ARITHMETIC\n");
+    demo_eval("2 + 3 * 4", "Order of operations (BEDMAS)");
+    demo_eval("(2 + 3) * 4", "Parentheses override precedence");
+    demo_eval("2^10", "Exponentiation: 2^10 = 1024");
+    demo_eval("5!", "Factorial: 5! = 120");
+    wait_key();
+}
+
+#ifdef HAVE_SQRT
+static void demo_sqrt(void)
+{
+    printf("ROOTS\n");
+    demo_eval("sqrt(2)", "Square root of 2");
+    demo_eval("sqrt(144)", "Square root of 144 = 12");
+    demo_eval("8^(1/3)", "Cube root of 8 = 2");
+    wait_key();
+}
+#endif
+
+#ifdef HAVE_TRIG
+static void demo_trig(void)
+{
+    printf("TRIGONOMETRY\n");
+    demo_eval("sin(pi/6)", "Sine of 30 degrees = 0.5");
+    demo_eval("cos(pi/3)", "Cosine of 60 degrees = 0.5");
+    demo_eval("tan(pi/4)", "Tangent of 45 degrees = 1");
+    demo_eval("atan(1)*4", "Compute pi via arctangent");
+    wait_key();
+}
+#endif
+
+#ifdef HAVE_EXP
+static void demo_exp(void)
+{
+    printf("EXPONENTIALS & LOGARITHMS\n");
+    demo_eval("exp(1)", "Euler's number e = 2.718...");
+    demo_eval("ln(e)", "Natural log of e = 1");
+    demo_eval("log10(1000)", "Log base 10 of 1000 = 3");
+    demo_eval("ln(8)/ln(2)", "Log base 2 of 8 = 3");
+    wait_key();
+}
+#endif
+
+#ifdef HAVE_COMPLEX
+static void demo_complex(void)
+{
+    printf("COMPLEX NUMBERS\n");
+    demo_eval("i^2", "i squared = -1");
+    demo_eval("(3+4i) * (3-4i)", "Complex conjugate product = 25");
+    demo_eval("abs(3+4i)", "Complex magnitude = 5");
+    demo_eval("sqrt(-1)", "Square root of -1 = i");
+    demo_eval("exp(i*pi) + 1", "Euler's identity = 0");
+    wait_key();
+}
+#endif
+
+#ifdef HAVE_HEXBIN
+static void demo_hexbin(void)
+{
+    printf("NUMBER BASES\n");
+    demo_eval("0xFF", "Hexadecimal FF = 255");
+    demo_eval("0b10101010", "Binary 10101010 = 170");
+    demo_eval("0xFF + 0b1", "Mixed bases: 255 + 1 = 256");
+#ifdef HAVE_ROMAN
+    demo_eval("MCMXCIX", "Roman numerals: 1999");
+    demo_eval("MMXXV", "Roman numerals: 2025");
+#endif
+    wait_key();
+}
+#endif
+
+#ifdef HAVE_BITWISE
+static void demo_bitwise(void)
+{
+    printf("BITWISE OPERATIONS\n");
+    demo_eval("and(0xFF, 0x0F)", "Bitwise AND: 0x0F = 15");
+    demo_eval("or(0xF0, 0x0F)", "Bitwise OR: 0xFF = 255");
+    demo_eval("xor(0xFF, 0xAA)", "Bitwise XOR: 0x55 = 85");
+    demo_eval("bnot(0xFF)", "Bitwise NOT of 0xFF");
+    demo_eval("lsl(1, 4)", "Left shift: 1<<4 = 16");
+    wait_key();
+}
+#endif
+
+#ifdef HAVE_COMB
+static void demo_comb(void)
+{
+    printf("COMBINATORICS\n");
+    demo_eval("nPr(10, 3)", "Permutations: 10P3 = 720");
+    demo_eval("nCr(10, 3)", "Combinations: 10C3 = 120");
+#ifdef HAVE_GCD
+    demo_eval("gcd(48, 18)", "GCD(48, 18) = 6");
+    demo_eval("lcm(12, 8)", "LCM(12, 8) = 24");
+#endif
+    wait_key();
+}
+#endif
+
+#ifdef HAVE_HYPER
+static void demo_hyper(void)
+{
+    printf("HYPERBOLIC FUNCTIONS\n");
+    demo_eval("sinh(1)", "Hyperbolic sine of 1");
+    demo_eval("cosh(0)", "Hyperbolic cosine of 0 = 1");
+    demo_eval("tanh(10)", "Hyperbolic tangent saturates to 1");
+    demo_eval("asinh(1)", "Inverse hyperbolic sine");
+    wait_key();
+}
+#endif
+
+#ifdef HAVE_GAMMA
+static void demo_gamma(void)
+{
+    printf("GAMMA FUNCTION\n");
+    demo_eval("gamma(5)", "Gamma(5) = 4! = 24");
+    demo_eval("gamma(0.5)", "Gamma(1/2) = sqrt(pi)");
+    demo_eval("lgamma(100)", "Log-gamma for large values");
+    wait_key();
+}
+#endif
+
+#ifdef HAVE_ERF
+static void demo_erf(void)
+{
+    printf("ERROR FUNCTION & NORMAL DISTRIBUTION\n");
+    demo_eval("erf(1)", "Error function at 1");
+    demo_eval("erfc(0)", "Complementary: erfc(0) = 1");
+    demo_eval("normcdf(0)", "Standard normal CDF(0) = 0.5");
+    demo_eval("norminv(0.975)", "97.5 percentile = 1.96");
+    wait_key();
+}
+#endif
+
+#ifdef HAVE_BESSEL
+static void demo_bessel(void)
+{
+    printf("BESSEL FUNCTIONS\n");
+    demo_eval("j0(0)", "Bessel J0(0) = 1");
+    demo_eval("j0(2.4048)", "First zero of J0");
+    demo_eval("j1(1)", "Bessel J1(1)");
+    wait_key();
+}
+#endif
+
+#ifdef HAVE_ELLIPTIC
+static void demo_elliptic(void)
+{
+    printf("ELLIPTIC INTEGRALS\n");
+    demo_eval("ellipk(0)", "K(0) = pi/2");
+    demo_eval("ellipk(0.5)", "Complete elliptic K(0.5)");
+    demo_eval("ellipe(0)", "E(0) = pi/2");
+    demo_eval("ellipe(0.5)", "Complete elliptic E(0.5)");
+    wait_key();
+}
+#endif
+
+#ifdef HAVE_LAMBERTW
+static void demo_lambertw(void)
+{
+    printf("LAMBERT W FUNCTION\n");
+    demo_eval("lambertw(0)", "W(0) = 0");
+    demo_eval("lambertw(1)", "W(1) = omega constant");
+    demo_eval("lambertw(e)", "W(e) = 1");
+    printf("  W solves: W(x) * exp(W(x)) = x\n");
+    wait_key();
+}
+#endif
+
+#ifdef HAVE_RPN
+static void demo_rpn(void)
+{
+    printf("RPN (REVERSE POLISH NOTATION) MODE\n");
+    printf("  Type 'rpn' to enter RPN mode\n");
+    printf("  Example session:\n");
+    printf("    > 5 ENTER\n");
+    printf("    > 3 +        (computes 5+3=8)\n");
+    printf("    > 2 *        (computes 8*2=16)\n");
+    printf("  HP-style 4-level stack (X, Y, Z, T)\n");
+    wait_key();
+}
+#endif
+
+#ifdef HAVE_VARIABLES
+static void demo_variables(void)
+{
+    printf("VARIABLES\n");
+    demo_eval("x = 10", "Assign variable x = 10");
+    demo_eval("x^2 + 2*x + 1", "Use in expression = 121");
+    printf("  'vars' command lists all variables\n");
+#ifdef HAVE_USER_FUNCS
+    printf("\nUSER FUNCTIONS\n");
+    printf("  f(x) = x^2 + 1   Define function\n");
+    printf("  f(5) = 26        Call function\n");
+    printf("  'funcs' lists all functions\n");
+#endif
+    wait_key();
+}
+#endif
+
+#ifdef HAVE_MATRIX
+static void demo_matrix(void)
+{
+    printf("MATRICES\n");
+    printf("  A = [1 2; 3 4]   Define 2x2 matrix\n");
+    printf("  A * A            Matrix multiplication\n");
+    printf("  det(A)           Determinant = -2\n");
+    printf("  inv(A)           Matrix inverse\n");
+    printf("  eig(A)           Eigenvalues\n");
+    printf("  trace(A)         Sum of diagonal = 5\n");
+    wait_key();
+}
+
+static void demo_matlab(void)
+{
+    printf("MATLAB COMPATIBILITY\n");
+    demo_eval("[1 2 3; 4 5 6]", "Semicolon separates rows");
+    demo_eval("1:5", "Colon notation for ranges");
+    demo_eval("linspace(0,10,5)", "Linear spacing");
+    demo_eval("sum([1 2 3 4 5])", "Sum = 15");
+    demo_eval("mean([1 2 3 4 5])", "Mean = 3");
+    demo_eval("sort([3 1 4 1 5])", "Sort ascending");
+    demo_eval("unique([1 2 2 3 3 3])", "Unique elements");
+    demo_eval("eye(3)", "Identity matrix");
+    demo_eval("union([1 2], [2 3])", "Set union");
+    demo_eval("sind(30)", "Sine in degrees = 0.5");
+    printf("  + 135 more MATLAB functions\n");
+    wait_key();
+}
+#endif
+
+#ifdef HAVE_STATS
+static void demo_stats(void)
+{
+    printf("STATISTICS\n");
+    printf("  10 S+            Add data point\n");
+    printf("  20 S+            Add another\n");
+    printf("  30 S+            Add another\n");
+    printf("  mean             Compute mean = 20\n");
+    printf("  sdev             Standard deviation\n");
+    printf("  median           Median = 20\n");
+    printf("  clrS             Clear statistics\n");
+    wait_key();
+}
+#endif
+
+#ifdef HAVE_SOLVER
+static void demo_solver(void)
+{
+    printf("EQUATION SOLVING\n");
+    printf("  quad 1 -5 6      Solve x^2 - 5x + 6 = 0\n");
+    printf("  Roots: x = 2, x = 3\n\n");
+    printf("  quad 1 0 1       Solve x^2 + 1 = 0\n");
+    printf("  Roots: x = i, x = -i (complex)\n");
+    wait_key();
+}
+#endif
+
+#ifdef HAVE_TVM
+static void demo_tvm(void)
+{
+    printf("TIME VALUE OF MONEY\n");
+    printf("  n=360            30 years * 12 months\n");
+    printf("  i=6              6%% annual rate\n");
+    printf("  pv=200000        $200,000 loan\n");
+    printf("  fv=0             Fully amortized\n");
+    printf("  pmt              Compute payment\n");
+    printf("  Result: ~$1,199/month\n");
+    wait_key();
+}
+#endif
+
+#ifdef HAVE_ORBITAL
+static void demo_orbital(void)
+{
+    printf("ORBITAL MECHANICS\n");
+    printf("  orbit 6378 200 35786\n");
+    printf("  Hohmann transfer: LEO to GEO\n");
+    printf("  Shows: delta-v1, delta-v2, time\n");
+    wait_key();
+}
+#endif
+
+#ifdef HAVE_NEWTON
+static void demo_newton(void)
+{
+    printf("NEWTON'S METHOD\n");
+    printf("  newton x^3-2 1   Find cube root of 2\n");
+    printf("  Starting guess: x = 1\n");
+    printf("  Result: 1.2599...\n");
+    wait_key();
+}
+#endif
+
+void run_demo(void)
+{
+    printf("\n");
+    printf("===========================================\n");
+    printf("  SC Calculator Demo (%d-bit precision)\n", AP_BITS);
+    printf("===========================================\n\n");
+    
+    demo_basic();
+    
+#ifdef HAVE_SQRT
+    demo_sqrt();
+#endif
+#ifdef HAVE_TRIG
+    demo_trig();
+#endif
+#ifdef HAVE_EXP
+    demo_exp();
+#endif
+#ifdef HAVE_COMPLEX
+    demo_complex();
+#endif
+#ifdef HAVE_HEXBIN
+    demo_hexbin();
+#endif
+#ifdef HAVE_BITWISE
+    demo_bitwise();
+#endif
+#ifdef HAVE_COMB
+    demo_comb();
+#endif
+#ifdef HAVE_HYPER
+    demo_hyper();
+#endif
+#ifdef HAVE_GAMMA
+    demo_gamma();
+#endif
+#ifdef HAVE_ERF
+    demo_erf();
+#endif
+#ifdef HAVE_BESSEL
+    demo_bessel();
+#endif
+#ifdef HAVE_ELLIPTIC
+    demo_elliptic();
+#endif
+#ifdef HAVE_LAMBERTW
+    demo_lambertw();
+#endif
+#ifdef HAVE_RPN
+    demo_rpn();
+#endif
+#ifdef HAVE_VARIABLES
+    demo_variables();
+#endif
+#ifdef HAVE_MATRIX
+    demo_matrix();
+    demo_matlab();
+#endif
+#ifdef HAVE_STATS
+    demo_stats();
+#endif
+#ifdef HAVE_SOLVER
+    demo_solver();
+#endif
+#ifdef HAVE_TVM
+    demo_tvm();
+#endif
+#ifdef HAVE_ORBITAL
+    demo_orbital();
+#endif
+#ifdef HAVE_NEWTON
+    demo_newton();
+#endif
+
+    printf("OTHER COMMANDS\n");
+    printf("  help       Show all commands\n");
+    printf("  constants  Mathematical constants\n");
+    printf("  features   Enabled features\n");
+    printf("  test       Self-tests\n");
+    printf("  bench      Benchmarks\n");
+    printf("\n");
+    printf("Demo complete!\n\n");
 }

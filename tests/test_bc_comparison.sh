@@ -25,9 +25,9 @@ else
     NC=''
 fi
 
-# Get result from sc (strip "= " prefix)
+# Get result from sc (quiet pipe mode - no "= " prefix)
 run_sc() {
-    echo "$1" | $SC 2>/dev/null | grep "^=" | head -1 | sed 's/^= //'
+    echo "$1" | $SC 2>/dev/null | tail -1
 }
 
 # Get result from bc

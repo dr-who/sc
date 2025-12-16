@@ -1,7 +1,28 @@
-/* apfc.c - Arbitrary Precision Complex numbers */
+/* apfc.c - Arbitrary Precision Complex numbers
+ * Pure C89, standalone library - no external dependencies
+ */
 #include "apfc.h"
-#include <stdio.h>
-#include <string.h>
+
+/* Simple string helpers to avoid string.h dependency */
+static void str_copy(char *dst, const char *src)
+{
+    while (*src) *dst++ = *src++;
+    *dst = '\0';
+}
+
+static int str_eq(const char *a, const char *b)
+{
+    while (*a && *b && *a == *b) { a++; b++; }
+    return *a == *b;
+}
+
+static char *str_append(char *dst, const char *src)
+{
+    while (*dst) dst++;
+    while (*src) *dst++ = *src++;
+    *dst = '\0';
+    return dst;
+}
 
 void apfc_zero(apfc *z)
 {
@@ -472,12 +493,13 @@ void apfc_to_str(char *buf, int bufsize, const apfc *z, int max_frac)
 {
     char re_buf[256], im_buf[256];
     int re_zero, im_zero;
+    char *p;
     
     (void)bufsize;  /* silence warning; TODO: add proper bounds checking */
     
     /* Special case: if both are NaN, just show "NaN" */
     if (apf_isnan(&z->re) && apf_isnan(&z->im)) {
-        strcpy(buf, "NaN");
+        str_copy(buf, "NaN");
         return;
     }
     
@@ -485,7 +507,7 @@ void apfc_to_str(char *buf, int bufsize, const apfc *z, int max_frac)
     im_zero = apf_is_zero(&z->im);
     
     if (re_zero && im_zero) {
-        strcpy(buf, "0");
+        str_copy(buf, "0");
         return;
     }
     
@@ -494,27 +516,34 @@ void apfc_to_str(char *buf, int bufsize, const apfc *z, int max_frac)
     
     /* If imaginary is zero, just show real */
     if (im_zero) {
-        strcpy(buf, re_buf);
+        str_copy(buf, re_buf);
         return;
     }
     
     /* If real is zero and imaginary is not */
     if (re_zero) {
         /* Pure imaginary */
-        if (strcmp(im_buf, "1") == 0) {
-            strcpy(buf, "i");
-        } else if (strcmp(im_buf, "-1") == 0) {
-            strcpy(buf, "-i");
+        if (str_eq(im_buf, "1")) {
+            str_copy(buf, "i");
+        } else if (str_eq(im_buf, "-1")) {
+            str_copy(buf, "-i");
         } else {
-            sprintf(buf, "%si", im_buf);
+            /* im_buf + "i" */
+            str_copy(buf, im_buf);
+            str_append(buf, "i");
         }
         return;
     }
     
-    /* Both parts */
+    /* Both parts: "re + im*i" or "re - im*i" */
+    str_copy(buf, re_buf);
     if (z->im.sign) {
-        sprintf(buf, "%s - %si", re_buf, im_buf + 1);  /* skip '-' */
+        p = str_append(buf, " - ");
+        str_copy(p, im_buf + 1);  /* skip '-' */
+        str_append(buf, "i");
     } else {
-        sprintf(buf, "%s + %si", re_buf, im_buf);
+        p = str_append(buf, " + ");
+        str_copy(p, im_buf);
+        str_append(buf, "i");
     }
 }

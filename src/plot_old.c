@@ -1,6 +1,6 @@
-/* plot.c - Function plotting for scalc
+/* plot.c - Function plotting for DOS VGA graphics
  * C89 compliant for Watcom C / DOS
- * 100% soft-float APF-based - NO double or float types
+ * Uses bisection to progressively fill plot - press key to stop
  */
 #include "sc.h"
 
@@ -76,7 +76,7 @@ static void draw_line(int x1, int y1, int x2, int y2, unsigned char color)
     }
 }
 
-int do_plot(const char *expr, char var, apf *xmin, apf *xmax)
+int do_plot(const char *expr, apf *xmin, apf *xmax)
 {
     int func_idx, x;
     apf x_range, x_step, temp;
@@ -84,18 +84,21 @@ int do_plot(const char *expr, char var, apf *xmin, apf *xmax)
     apfc arg, result;
     int axis_x, axis_y;
     int prev_x, prev_y, first_point;
-    int use_expr = 0;
+    int use_expr = 0;  /* 1 if plotting an expression, 0 if a user function */
     
+    /* Check if it's a user-defined function name first */
     func_idx = get_func_index(expr);
     if (func_idx < 0 || !user_funcs[func_idx].defined) {
+        /* Not a user function - treat as expression */
         use_expr = 1;
     }
     
+    /* Compute x step */
     apf_sub(&x_range, xmax, xmin);
     apf_from_int(&temp, GFX_WIDTH - 1);
     apf_div(&x_step, &x_range, &temp);
     
-    /* Quick y-range scan */
+    /* Quick y-range scan: just 8 sample points */
     {
         int first_valid = 0;
         int eval_ok;
@@ -109,12 +112,13 @@ int do_plot(const char *expr, char var, apf *xmin, apf *xmax)
             apf_zero(&arg.im);
             
             if (use_expr) {
-                eval_ok = eval_expr_with_var(&result, expr, var, &arg);
+                eval_ok = eval_expr_with_x(&result, expr, &arg);
             } else {
                 eval_ok = eval_user_func(&result, func_idx, &arg);
             }
             
-            if (eval_ok && !apf_isnan(&result.re) && !apf_isinf(&result.re) &&
+            if (eval_ok &&
+                !apf_isnan(&result.re) && !apf_isinf(&result.re) &&
                 apf_iszero(&result.im)) {
                 if (!first_valid) {
                     apf_copy(&ymin, &result.re);
@@ -132,7 +136,7 @@ int do_plot(const char *expr, char var, apf *xmin, apf *xmax)
         }
     }
     
-    /* Add 10% margin */
+    /* Add 10% margin to y range */
     apf_sub(&y_range, &ymax, &ymin);
     if (apf_iszero(&y_range)) apf_from_int(&y_range, 1);
     {
@@ -168,8 +172,10 @@ int do_plot(const char *expr, char var, apf *xmin, apf *xmax)
         }
     }
     
+    /* Switch to graphics immediately */
     set_video_mode(0x13);
     
+    /* Draw axes */
     if (axis_y >= 0 && axis_y < GFX_HEIGHT) {
         draw_hline(0, GFX_WIDTH - 1, axis_y, COLOR_CYAN);
     }
@@ -177,6 +183,7 @@ int do_plot(const char *expr, char var, apf *xmin, apf *xmax)
         draw_vline(axis_x, 0, GFX_HEIGHT - 1, COLOR_CYAN);
     }
     
+    /* Plot points left to right */
     prev_x = -1;
     prev_y = -1;
     first_point = 1;
@@ -185,11 +192,13 @@ int do_plot(const char *expr, char var, apf *xmin, apf *xmax)
         apf x_val, idx_apf, norm_y;
         int py, eval_ok;
         
+        /* Check for cancel */
         if (kbhit()) {
             getch();
             break;
         }
         
+        /* Compute x value */
         apf_from_int(&idx_apf, x);
         apf_mul(&temp, &idx_apf, &x_step);
         apf_add(&x_val, xmin, &temp);
@@ -197,27 +206,33 @@ int do_plot(const char *expr, char var, apf *xmin, apf *xmax)
         apf_copy(&arg.re, &x_val);
         apf_zero(&arg.im);
         
+        /* Evaluate function or expression */
         if (use_expr) {
-            eval_ok = eval_expr_with_var(&result, expr, var, &arg);
+            eval_ok = eval_expr_with_x(&result, expr, &arg);
         } else {
             eval_ok = eval_user_func(&result, func_idx, &arg);
         }
         
-        if (eval_ok && !apf_isnan(&result.re) && !apf_isinf(&result.re) &&
+        if (eval_ok &&
+            !apf_isnan(&result.re) && !apf_isinf(&result.re) &&
             apf_iszero(&result.im)) {
             
+            /* Map to screen Y */
             apf_sub(&temp, &result.re, &ymin);
             apf_div(&norm_y, &temp, &y_range);
             apf_from_int(&temp, GFX_HEIGHT - 1);
             apf_mul(&norm_y, &norm_y, &temp);
             py = (GFX_HEIGHT - 1) - (int)apf_to_long(&norm_y);
             
+            /* Update y range if needed (auto-scale) */
             if (apf_cmp(&result.re, &ymin) < 0 || apf_cmp(&result.re, &ymax) > 0) {
+                /* Point out of range - just skip drawing */
                 if (py < 0) py = -1;
                 if (py >= GFX_HEIGHT) py = -1;
             }
             
             if (py >= 0 && py < GFX_HEIGHT) {
+                /* Draw line from previous point */
                 if (!first_point && prev_y >= 0) {
                     draw_line(prev_x, prev_y, x, py, COLOR_YELLOW);
                 } else {
@@ -227,13 +242,16 @@ int do_plot(const char *expr, char var, apf *xmin, apf *xmax)
                 prev_y = py;
                 first_point = 0;
             } else {
+                /* Gap in curve */
                 first_point = 1;
             }
         } else {
+            /* Invalid point - gap in curve */
             first_point = 1;
         }
     }
     
+    /* Wait for key to exit */
     while (kbhit()) getch();
     getch();
     
@@ -243,8 +261,8 @@ int do_plot(const char *expr, char var, apf *xmin, apf *xmax)
     return 1;
 }
 
-/* Text mode plot for DOS */
-static int text_plot_impl(const char *expr, char var, apf *xmin, apf *xmax)
+/* Text mode plot for DOS - shared code */
+static int text_plot_impl(const char *func_name, apf *xmin, apf *xmax)
 {
     int func_idx, x, row;
     apf x_range, x_step, x_val, temp;
@@ -256,10 +274,128 @@ static int text_plot_impl(const char *expr, char var, apf *xmin, apf *xmax)
     char line[82];
     int width = 70, height = 20, axis_row = -1;
     int first_valid = 0;
-    int use_expr = 0;
     
+    func_idx = get_func_index(func_name);
+    if (func_idx < 0 || !user_funcs[func_idx].defined) {
+        printf("Error: function '%s' not defined\n", func_name);
+        return 0;
+    }
+    
+    apf_sub(&x_range, xmax, xmin);
+    apf_from_int(&temp, width);
+    apf_div(&x_step, &x_range, &temp);
+    
+    for (x = 0; x < width; x++) {
+        apf screen_x;
+        apf_from_int(&screen_x, x);
+        apf_mul(&temp, &screen_x, &x_step);
+        apf_add(&x_val, xmin, &temp);
+        
+        apf_copy(&arg.re, &x_val);
+        apf_zero(&arg.im);
+        
+        if (eval_user_func(&result, func_idx, &arg) &&
+            !apf_isnan(&result.re) && !apf_isinf(&result.re) &&
+            apf_iszero(&result.im)) {
+            apf_copy(&y_vals[x], &result.re);
+            valid[x] = 1;
+            if (!first_valid || apf_cmp(&result.re, &ymin) < 0) apf_copy(&ymin, &result.re);
+            if (!first_valid || apf_cmp(&result.re, &ymax) > 0) apf_copy(&ymax, &result.re);
+            first_valid = 1;
+        } else {
+            valid[x] = 0;
+        }
+    }
+    
+    if (!first_valid) {
+        printf("No valid points in range\n");
+        return 0;
+    }
+    
+    apf_sub(&y_range, &ymax, &ymin);
+    if (apf_iszero(&y_range)) apf_from_int(&y_range, 1);
+    {
+        apf margin, ten;
+        apf_from_int(&ten, 10);
+        apf_div(&margin, &y_range, &ten);
+        apf_sub(&ymin, &ymin, &margin);
+        apf_add(&ymax, &ymax, &margin);
+        apf_sub(&y_range, &ymax, &ymin);
+    }
+    
+    for (x = 0; x < width; x++) {
+        if (valid[x]) {
+            apf norm_y;
+            apf_sub(&temp, &y_vals[x], &ymin);
+            apf_div(&norm_y, &temp, &y_range);
+            apf_from_int(&temp, height - 1);
+            apf_mul(&norm_y, &norm_y, &temp);
+            y_screen[x] = (height - 1) - (int)apf_to_long(&norm_y);
+        }
+    }
+    
+    {
+        apf zero_apf, norm;
+        apf_zero(&zero_apf);
+        if (apf_cmp(&ymin, &zero_apf) <= 0 && apf_cmp(&ymax, &zero_apf) >= 0) {
+            apf_sub(&temp, &zero_apf, &ymin);
+            apf_div(&norm, &temp, &y_range);
+            apf_from_int(&temp, height - 1);
+            apf_mul(&norm, &norm, &temp);
+            axis_row = (height - 1) - (int)apf_to_long(&norm);
+        }
+    }
+    
+    printf("\n");
+    for (row = 0; row < height; row++) {
+        int col;
+        for (col = 0; col < width; col++) {
+            if (valid[col] && y_screen[col] == row) line[col] = '*';
+            else if (row == axis_row) line[col] = '-';
+            else line[col] = ' ';
+        }
+        line[width] = '\0';
+        if (row == 0) printf("%8ld |%s\n", apf_to_long(&ymax), line);
+        else if (row == height - 1) printf("%8ld |%s\n", apf_to_long(&ymin), line);
+        else if (row == axis_row) printf("%8d |%s\n", 0, line);
+        else printf("         |%s\n", line);
+    }
+    
+    printf("         +");
+    for (x = 0; x < width; x++) printf("-");
+    printf("\n         %-8ld", apf_to_long(xmin));
+    for (x = 8; x < width - 8; x++) printf(" ");
+    printf("%8ld\n\n", apf_to_long(xmax));
+    
+    return 1;
+}
+
+int do_textplot(const char *func_name, apf *xmin, apf *xmax)
+{
+    return text_plot_impl(func_name, xmin, xmax);
+}
+
+#else
+/* Non-DOS: ASCII plot only */
+
+int do_plot(const char *expr, apf *xmin, apf *xmax)
+{
+    int func_idx, x, row;
+    apf x_range, x_step, x_val, temp;
+    apfc arg, result;
+    apf ymin, ymax, y_range;
+    static apf y_vals[80];
+    static int valid[80];
+    static int y_screen[80];
+    char line[82];
+    int width = 70, height = 20, axis_row = -1;
+    int first_valid = 0;
+    int use_expr = 0;  /* 1 if plotting an expression, 0 if a user function */
+    
+    /* Check if it's a user-defined function name first */
     func_idx = get_func_index(expr);
     if (func_idx < 0 || !user_funcs[func_idx].defined) {
+        /* Not a user function - treat as expression */
         use_expr = 1;
     }
     
@@ -278,7 +414,7 @@ static int text_plot_impl(const char *expr, char var, apf *xmin, apf *xmax)
         apf_zero(&arg.im);
         
         if (use_expr) {
-            eval_ok = eval_expr_with_var(&result, expr, var, &arg);
+            eval_ok = eval_expr_with_x(&result, expr, &arg);
         } else {
             eval_ok = eval_user_func(&result, func_idx, &arg);
         }
@@ -359,191 +495,34 @@ static int text_plot_impl(const char *expr, char var, apf *xmin, apf *xmax)
     return 1;
 }
 
-int do_textplot(const char *expr, char var, apf *xmin, apf *xmax)
+int do_textplot(const char *func_name, apf *xmin, apf *xmax)
 {
-    return text_plot_impl(expr, var, xmin, xmax);
+    return do_plot(func_name, xmin, xmax);
 }
 
-#else
-/* Non-DOS: ASCII plot only */
-
-int do_plot(const char *expr, char var, apf *xmin, apf *xmax)
-{
-    int func_idx, x, row;
-    apf x_range, x_step, x_val, temp;
-    apfc arg, result;
-    apf ymin, ymax, y_range;
-    static apf y_vals[80];
-    static int valid[80];
-    static int y_screen[80];
-    char line[82];
-    int width = 70, height = 20, axis_row = -1;
-    int first_valid = 0;
-    int use_expr = 0;
-    
-    func_idx = get_func_index(expr);
-    if (func_idx < 0 || !user_funcs[func_idx].defined) {
-        use_expr = 1;
-    }
-    
-    apf_sub(&x_range, xmax, xmin);
-    apf_from_int(&temp, width);
-    apf_div(&x_step, &x_range, &temp);
-    
-    for (x = 0; x < width; x++) {
-        apf screen_x;
-        apf_from_int(&screen_x, x);
-        apf_mul(&temp, &screen_x, &x_step);
-        apf_add(&x_val, xmin, &temp);
-        
-        apf_copy(&arg.re, &x_val);
-        apf_zero(&arg.im);
-        
-        if (use_expr) {
-            if (eval_expr_with_var(&result, expr, var, &arg) &&
-                !apf_isnan(&result.re) && !apf_isinf(&result.re) &&
-                apf_iszero(&result.im)) {
-                apf_copy(&y_vals[x], &result.re);
-                valid[x] = 1;
-                if (!first_valid || apf_cmp(&result.re, &ymin) < 0) apf_copy(&ymin, &result.re);
-                if (!first_valid || apf_cmp(&result.re, &ymax) > 0) apf_copy(&ymax, &result.re);
-                first_valid = 1;
-            } else {
-                valid[x] = 0;
-            }
-        } else {
-            if (eval_user_func(&result, func_idx, &arg) &&
-                !apf_isnan(&result.re) && !apf_isinf(&result.re) &&
-                apf_iszero(&result.im)) {
-                apf_copy(&y_vals[x], &result.re);
-                valid[x] = 1;
-                if (!first_valid || apf_cmp(&result.re, &ymin) < 0) apf_copy(&ymin, &result.re);
-                if (!first_valid || apf_cmp(&result.re, &ymax) > 0) apf_copy(&ymax, &result.re);
-                first_valid = 1;
-            } else {
-                valid[x] = 0;
-            }
-        }
-    }
-    
-    if (!first_valid) {
-        printf("No valid points in range\n");
-        return 0;
-    }
-    
-    apf_sub(&y_range, &ymax, &ymin);
-    if (apf_iszero(&y_range)) apf_from_int(&y_range, 1);
-    {
-        apf margin, ten;
-        apf_from_int(&ten, 10);
-        apf_div(&margin, &y_range, &ten);
-        apf_sub(&ymin, &ymin, &margin);
-        apf_add(&ymax, &ymax, &margin);
-        apf_sub(&y_range, &ymax, &ymin);
-    }
-    
-    for (x = 0; x < width; x++) {
-        if (valid[x]) {
-            apf norm_y;
-            apf_sub(&temp, &y_vals[x], &ymin);
-            apf_div(&norm_y, &temp, &y_range);
-            apf_from_int(&temp, height - 1);
-            apf_mul(&norm_y, &norm_y, &temp);
-            y_screen[x] = (height - 1) - (int)apf_to_long(&norm_y);
-        }
-    }
-    
-    {
-        apf zero_apf, norm;
-        apf_zero(&zero_apf);
-        if (apf_cmp(&ymin, &zero_apf) <= 0 && apf_cmp(&ymax, &zero_apf) >= 0) {
-            apf_sub(&temp, &zero_apf, &ymin);
-            apf_div(&norm, &temp, &y_range);
-            apf_from_int(&temp, height - 1);
-            apf_mul(&norm, &norm, &temp);
-            axis_row = (height - 1) - (int)apf_to_long(&norm);
-        }
-    }
-    
-    printf("\n");
-    for (row = 0; row < height; row++) {
-        int col;
-        for (col = 0; col < width; col++) {
-            if (valid[col] && y_screen[col] == row) line[col] = '*';
-            else if (row == axis_row) line[col] = '-';
-            else line[col] = ' ';
-        }
-        line[width] = '\0';
-        if (row == 0) printf("%8ld |%s\n", apf_to_long(&ymax), line);
-        else if (row == height - 1) printf("%8ld |%s\n", apf_to_long(&ymin), line);
-        else if (row == axis_row) printf("%8d |%s\n", 0, line);
-        else printf("         |%s\n", line);
-    }
-    
-    printf("         +");
-    for (x = 0; x < width; x++) printf("-");
-    printf("\n         %-8ld", apf_to_long(xmin));
-    for (x = 8; x < width - 8; x++) printf(" ");
-    printf("%8ld\n\n", apf_to_long(xmax));
-    
-    return 1;
-}
-
-int do_textplot(const char *expr, char var, apf *xmin, apf *xmax)
-{
-    return do_plot(expr, var, xmin, xmax);
-}
-
-#endif /* HAVE_CONIO */
-
-/* ========== Chaotic Systems - 100% APF implementation ========== */
+/* Chaotic systems - require native float, excluded from DOS builds */
+#if !defined(SCALC_MEDIUM) && !defined(SCALC_TINY) && !defined(SCALC_MINIMAL) && !defined(SCALC_VIC20)
 
 /*
  * Lorenz Attractor - the classic chaotic system
  * dx/dt = sigma * (y - x)
  * dy/dt = x * (rho - z) - y
  * dz/dt = x * y - beta * z
+ *
  * Classic parameters: sigma=10, rho=28, beta=8/3
+ * Projects onto x-z plane for the butterfly shape
  */
-int do_lorenz_text(long sigma_l, long rho_l, long beta_num, long beta_den, int steps)
+
+/* Text-mode Lorenz attractor */
+int do_lorenz_text(double sigma, double rho, double beta, int steps)
 {
-    apf x, y, z, sigma, rho, beta;
-    apf dt, half_dt;
-    apf xmin_a, xmax_a, zmin_a, zmax_a;
+    double x = 1.0, y = 1.0, z = 1.0;
+    double dt = 0.01;
+    double xmin = -25, xmax = 25, zmin = 0, zmax = 55;
     int width = 70, height = 24;
     static char screen[30][80];
     int i, row, col;
-    
-    /* Initialize parameters */
-    apf_from_int(&sigma, sigma_l);
-    apf_from_int(&rho, rho_l);
-    {
-        apf num, den;
-        apf_from_int(&num, beta_num);
-        apf_from_int(&den, beta_den);
-        apf_div(&beta, &num, &den);
-    }
-    
-    /* dt = 0.01 */
-    {
-        apf num, den;
-        apf_from_int(&num, 1);
-        apf_from_int(&den, 100);
-        apf_div(&dt, &num, &den);
-        apf_from_int(&den, 2);
-        apf_div(&half_dt, &dt, &den);
-    }
-    
-    /* Initial conditions */
-    apf_from_int(&x, 1);
-    apf_from_int(&y, 1);
-    apf_from_int(&z, 1);
-    
-    /* Plot bounds */
-    apf_from_int(&xmin_a, -25);
-    apf_from_int(&xmax_a, 25);
-    apf_from_int(&zmin_a, 0);
-    apf_from_int(&zmax_a, 55);
+    int px, pz;
     
     /* Clear screen buffer */
     for (row = 0; row < height; row++) {
@@ -553,135 +532,63 @@ int do_lorenz_text(long sigma_l, long rho_l, long beta_num, long beta_den, int s
         screen[row][width] = '\0';
     }
     
-    printf("\nLorenz Attractor (sigma=%ld, rho=%ld, beta=%ld/%ld)\n", 
-           sigma_l, rho_l, beta_num, beta_den);
+    printf("\nLorenz Attractor (sigma=%.1f, rho=%.1f, beta=%.3f)\n", sigma, rho, beta);
     printf("Projecting x-z plane, %d iterations\n\n", steps);
     
-    /* Integrate using RK4 */
+    /* Integrate and plot */
     for (i = 0; i < steps; i++) {
-        apf k1x, k1y, k1z, k2x, k2y, k2z, k3x, k3y, k3z, k4x, k4y, k4z;
-        apf tx, ty, tz, tmp, tmp2;
-        apf dx_final, dy_final, dz_final;
-        int px, pz;
+        double dx, dy, dz;
         
-        /* k1 = f(x, y, z) */
-        apf_sub(&tmp, &y, &x);
-        apf_mul(&k1x, &sigma, &tmp);            /* k1x = sigma * (y - x) */
-        
-        apf_sub(&tmp, &rho, &z);
-        apf_mul(&tmp2, &x, &tmp);
-        apf_sub(&k1y, &tmp2, &y);               /* k1y = x * (rho - z) - y */
-        
-        apf_mul(&tmp, &x, &y);
-        apf_mul(&tmp2, &beta, &z);
-        apf_sub(&k1z, &tmp, &tmp2);             /* k1z = x * y - beta * z */
-        
-        /* k2 = f(x + 0.5*dt*k1, ...) */
-        apf_mul(&tmp, &half_dt, &k1x);
-        apf_add(&tx, &x, &tmp);
-        apf_mul(&tmp, &half_dt, &k1y);
-        apf_add(&ty, &y, &tmp);
-        apf_mul(&tmp, &half_dt, &k1z);
-        apf_add(&tz, &z, &tmp);
-        
-        apf_sub(&tmp, &ty, &tx);
-        apf_mul(&k2x, &sigma, &tmp);
-        apf_sub(&tmp, &rho, &tz);
-        apf_mul(&tmp2, &tx, &tmp);
-        apf_sub(&k2y, &tmp2, &ty);
-        apf_mul(&tmp, &tx, &ty);
-        apf_mul(&tmp2, &beta, &tz);
-        apf_sub(&k2z, &tmp, &tmp2);
-        
-        /* k3 = f(x + 0.5*dt*k2, ...) */
-        apf_mul(&tmp, &half_dt, &k2x);
-        apf_add(&tx, &x, &tmp);
-        apf_mul(&tmp, &half_dt, &k2y);
-        apf_add(&ty, &y, &tmp);
-        apf_mul(&tmp, &half_dt, &k2z);
-        apf_add(&tz, &z, &tmp);
-        
-        apf_sub(&tmp, &ty, &tx);
-        apf_mul(&k3x, &sigma, &tmp);
-        apf_sub(&tmp, &rho, &tz);
-        apf_mul(&tmp2, &tx, &tmp);
-        apf_sub(&k3y, &tmp2, &ty);
-        apf_mul(&tmp, &tx, &ty);
-        apf_mul(&tmp2, &beta, &tz);
-        apf_sub(&k3z, &tmp, &tmp2);
-        
-        /* k4 = f(x + dt*k3, ...) */
-        apf_mul(&tmp, &dt, &k3x);
-        apf_add(&tx, &x, &tmp);
-        apf_mul(&tmp, &dt, &k3y);
-        apf_add(&ty, &y, &tmp);
-        apf_mul(&tmp, &dt, &k3z);
-        apf_add(&tz, &z, &tmp);
-        
-        apf_sub(&tmp, &ty, &tx);
-        apf_mul(&k4x, &sigma, &tmp);
-        apf_sub(&tmp, &rho, &tz);
-        apf_mul(&tmp2, &tx, &tmp);
-        apf_sub(&k4y, &tmp2, &ty);
-        apf_mul(&tmp, &tx, &ty);
-        apf_mul(&tmp2, &beta, &tz);
-        apf_sub(&k4z, &tmp, &tmp2);
-        
-        /* dx = (k1 + 2*k2 + 2*k3 + k4) / 6 */
+        /* RK4 integration step */
         {
-            apf two, six;
-            apf_from_int(&two, 2);
-            apf_from_int(&six, 6);
+            double k1x, k1y, k1z, k2x, k2y, k2z, k3x, k3y, k3z, k4x, k4y, k4z;
+            double tx, ty, tz;
             
-            apf_mul(&tmp, &two, &k2x);
-            apf_add(&dx_final, &k1x, &tmp);
-            apf_mul(&tmp, &two, &k3x);
-            apf_add(&dx_final, &dx_final, &tmp);
-            apf_add(&dx_final, &dx_final, &k4x);
-            apf_div(&dx_final, &dx_final, &six);
+            /* k1 */
+            k1x = sigma * (y - x);
+            k1y = x * (rho - z) - y;
+            k1z = x * y - beta * z;
             
-            apf_mul(&tmp, &two, &k2y);
-            apf_add(&dy_final, &k1y, &tmp);
-            apf_mul(&tmp, &two, &k3y);
-            apf_add(&dy_final, &dy_final, &tmp);
-            apf_add(&dy_final, &dy_final, &k4y);
-            apf_div(&dy_final, &dy_final, &six);
+            /* k2 */
+            tx = x + 0.5 * dt * k1x;
+            ty = y + 0.5 * dt * k1y;
+            tz = z + 0.5 * dt * k1z;
+            k2x = sigma * (ty - tx);
+            k2y = tx * (rho - tz) - ty;
+            k2z = tx * ty - beta * tz;
             
-            apf_mul(&tmp, &two, &k2z);
-            apf_add(&dz_final, &k1z, &tmp);
-            apf_mul(&tmp, &two, &k3z);
-            apf_add(&dz_final, &dz_final, &tmp);
-            apf_add(&dz_final, &dz_final, &k4z);
-            apf_div(&dz_final, &dz_final, &six);
+            /* k3 */
+            tx = x + 0.5 * dt * k2x;
+            ty = y + 0.5 * dt * k2y;
+            tz = z + 0.5 * dt * k2z;
+            k3x = sigma * (ty - tx);
+            k3y = tx * (rho - tz) - ty;
+            k3z = tx * ty - beta * tz;
+            
+            /* k4 */
+            tx = x + dt * k3x;
+            ty = y + dt * k3y;
+            tz = z + dt * k3z;
+            k4x = sigma * (ty - tx);
+            k4y = tx * (rho - tz) - ty;
+            k4z = tx * ty - beta * tz;
+            
+            dx = (k1x + 2*k2x + 2*k3x + k4x) / 6.0;
+            dy = (k1y + 2*k2y + 2*k3y + k4y) / 6.0;
+            dz = (k1z + 2*k2z + 2*k3z + k4z) / 6.0;
         }
         
-        /* Update: x += dt * dx */
-        apf_mul(&tmp, &dt, &dx_final);
-        apf_add(&x, &x, &tmp);
-        apf_mul(&tmp, &dt, &dy_final);
-        apf_add(&y, &y, &tmp);
-        apf_mul(&tmp, &dt, &dz_final);
-        apf_add(&z, &z, &tmp);
+        x += dt * dx;
+        y += dt * dy;
+        z += dt * dz;
         
         /* Map to screen (x-z projection) */
-        {
-            apf range, norm;
-            apf_sub(&range, &xmax_a, &xmin_a);
-            apf_sub(&tmp, &x, &xmin_a);
-            apf_div(&norm, &tmp, &range);
-            apf_from_int(&tmp, width - 1);
-            apf_mul(&norm, &norm, &tmp);
-            px = (int)apf_to_long(&norm);
-            
-            apf_sub(&range, &zmax_a, &zmin_a);
-            apf_sub(&tmp, &z, &zmin_a);
-            apf_div(&norm, &tmp, &range);
-            apf_from_int(&tmp, height - 1);
-            apf_mul(&norm, &norm, &tmp);
-            pz = (height - 1) - (int)apf_to_long(&norm);
-        }
+        px = (int)((x - xmin) / (xmax - xmin) * (width - 1));
+        pz = (int)((z - zmin) / (zmax - zmin) * (height - 1));
+        pz = (height - 1) - pz;  /* Flip Y */
         
         if (px >= 0 && px < width && pz >= 0 && pz < height) {
+            /* Use different chars for density */
             if (screen[pz][px] == ' ') screen[pz][px] = '.';
             else if (screen[pz][px] == '.') screen[pz][px] = ':';
             else if (screen[pz][px] == ':') screen[pz][px] = '+';
@@ -690,77 +597,48 @@ int do_lorenz_text(long sigma_l, long rho_l, long beta_num, long beta_den, int s
         }
     }
     
-    /* Print result */
-    printf("z=55 |");
+    /* Print the result */
+    printf("z=%.0f |", zmax);
     for (col = 0; col < width; col++) printf("%c", screen[0][col]);
     printf("\n");
     
     for (row = 1; row < height - 1; row++) {
-        printf("     |");
+        printf("      |");
         for (col = 0; col < width; col++) printf("%c", screen[row][col]);
         printf("\n");
     }
     
-    printf("z=0  |");
+    printf("z=%.0f  |", zmin);
     for (col = 0; col < width; col++) printf("%c", screen[height-1][col]);
     printf("\n");
     
-    printf("     +");
+    printf("      +");
     for (col = 0; col < width; col++) printf("-");
     printf("\n");
-    printf("     x=-25");
-    for (col = 0; col < width - 12; col++) printf(" ");
-    printf("x=25\n\n");
+    printf("      x=%.0f", xmin);
+    for (col = 0; col < width - 16; col++) printf(" ");
+    printf("x=%.0f\n\n", xmax);
     
     return 1;
 }
 
-/* Rossler Attractor using APF
+/* Rossler Attractor - another classic strange attractor
  * dx/dt = -y - z
  * dy/dt = x + a*y
  * dz/dt = b + z*(x - c)
+ * Classic parameters: a=0.2, b=0.2, c=5.7
  */
-int do_rossler_text(long a_num, long a_den, long b_num, long b_den, 
-                    long c_num, long c_den, int steps)
+int do_rossler_text(double a, double b, double c, int steps)
 {
-    apf x, y, z, a, b, c;
-    apf dt;
-    apf xmin_a, xmax_a, ymin_a, ymax_a;
+    double x = 1.0, y = 1.0, z = 1.0;
+    double dt = 0.02;
+    double xmin = -15, xmax = 15, ymin = -15, ymax = 15;
     int width = 70, height = 24;
     static char screen[30][80];
     int i, row, col;
+    int px, py;
     
-    /* Initialize parameters */
-    {
-        apf num, den;
-        apf_from_int(&num, a_num);
-        apf_from_int(&den, a_den);
-        apf_div(&a, &num, &den);
-        apf_from_int(&num, b_num);
-        apf_from_int(&den, b_den);
-        apf_div(&b, &num, &den);
-        apf_from_int(&num, c_num);
-        apf_from_int(&den, c_den);
-        apf_div(&c, &num, &den);
-    }
-    
-    /* dt = 0.02 */
-    {
-        apf num, den;
-        apf_from_int(&num, 1);
-        apf_from_int(&den, 50);
-        apf_div(&dt, &num, &den);
-    }
-    
-    apf_from_int(&x, 1);
-    apf_from_int(&y, 1);
-    apf_from_int(&z, 1);
-    
-    apf_from_int(&xmin_a, -15);
-    apf_from_int(&xmax_a, 15);
-    apf_from_int(&ymin_a, -15);
-    apf_from_int(&ymax_a, 15);
-    
+    /* Clear screen buffer */
     for (row = 0; row < height; row++) {
         for (col = 0; col < width; col++) {
             screen[row][col] = ' ';
@@ -768,53 +646,26 @@ int do_rossler_text(long a_num, long a_den, long b_num, long b_den,
         screen[row][width] = '\0';
     }
     
-    printf("\nRossler Attractor (a=%ld/%ld, b=%ld/%ld, c=%ld/%ld)\n",
-           a_num, a_den, b_num, b_den, c_num, c_den);
+    printf("\nRossler Attractor (a=%.1f, b=%.1f, c=%.1f)\n", a, b, c);
     printf("Projecting x-y plane, %d iterations\n\n", steps);
     
-    /* Simple Euler integration */
+    /* Integrate and plot */
     for (i = 0; i < steps; i++) {
-        apf dx, dy, dz, tmp, tmp2;
-        int px, py;
+        double dx, dy, dz;
         
-        /* dx = -y - z */
-        apf_add(&tmp, &y, &z);
-        apf_neg(&dx, &tmp);
+        /* Simple Euler - Rossler is less stiff */
+        dx = -y - z;
+        dy = x + a * y;
+        dz = b + z * (x - c);
         
-        /* dy = x + a*y */
-        apf_mul(&tmp, &a, &y);
-        apf_add(&dy, &x, &tmp);
+        x += dt * dx;
+        y += dt * dy;
+        z += dt * dz;
         
-        /* dz = b + z*(x - c) */
-        apf_sub(&tmp, &x, &c);
-        apf_mul(&tmp2, &z, &tmp);
-        apf_add(&dz, &b, &tmp2);
-        
-        /* Update */
-        apf_mul(&tmp, &dt, &dx);
-        apf_add(&x, &x, &tmp);
-        apf_mul(&tmp, &dt, &dy);
-        apf_add(&y, &y, &tmp);
-        apf_mul(&tmp, &dt, &dz);
-        apf_add(&z, &z, &tmp);
-        
-        /* Map to screen */
-        {
-            apf range, norm;
-            apf_sub(&range, &xmax_a, &xmin_a);
-            apf_sub(&tmp, &x, &xmin_a);
-            apf_div(&norm, &tmp, &range);
-            apf_from_int(&tmp, width - 1);
-            apf_mul(&norm, &norm, &tmp);
-            px = (int)apf_to_long(&norm);
-            
-            apf_sub(&range, &ymax_a, &ymin_a);
-            apf_sub(&tmp, &y, &ymin_a);
-            apf_div(&norm, &tmp, &range);
-            apf_from_int(&tmp, height - 1);
-            apf_mul(&norm, &norm, &tmp);
-            py = (height - 1) - (int)apf_to_long(&norm);
-        }
+        /* Map to screen (x-y projection) */
+        px = (int)((x - xmin) / (xmax - xmin) * (width - 1));
+        py = (int)((y - ymin) / (ymax - ymin) * (height - 1));
+        py = (height - 1) - py;
         
         if (px >= 0 && px < width && py >= 0 && py < height) {
             if (screen[py][px] == ' ') screen[py][px] = '.';
@@ -826,46 +677,45 @@ int do_rossler_text(long a_num, long a_den, long b_num, long b_den,
     }
     
     /* Print */
-    printf("y=15 |");
+    printf("y=%.0f |", ymax);
     for (col = 0; col < width; col++) printf("%c", screen[0][col]);
     printf("\n");
     
     for (row = 1; row < height - 1; row++) {
-        printf("     |");
+        printf("      |");
         for (col = 0; col < width; col++) printf("%c", screen[row][col]);
         printf("\n");
     }
     
-    printf("y=-15|");
+    printf("y=%.0f |", ymin);
     for (col = 0; col < width; col++) printf("%c", screen[height-1][col]);
     printf("\n");
     
-    printf("     +");
+    printf("      +");
     for (col = 0; col < width; col++) printf("-");
     printf("\n");
-    printf("     x=-15");
-    for (col = 0; col < width - 12; col++) printf(" ");
-    printf("x=15\n\n");
+    printf("      x=%.0f", xmin);
+    for (col = 0; col < width - 16; col++) printf(" ");
+    printf("x=%.0f\n\n", xmax);
     
     return 1;
 }
 
-/* Parametric curve plotting using APF */
+/* Parametric curve plotting: x(t), y(t) 
+ * For Lissajous figures, spirals, etc.
+ */
 int do_parametric_text(const char *xfunc, const char *yfunc, 
-                       apf *tmin, apf *tmax, int steps)
+                       double tmin, double tmax, int steps)
 {
     int xidx, yidx;
-    apf t, dt, t_range;
-    apf xmin_a, xmax_a, ymin_a, ymax_a;
+    double t, dt;
+    double xmin = 1e30, xmax = -1e30, ymin = 1e30, ymax = -1e30;
     int width = 70, height = 24;
     static char screen[30][80];
-    /* Store points using integers (screen coords) to save memory */
-    static int px_arr[500], py_arr[500];
+    static double xs[2000], ys[2000];
     int i, row, col, valid_count = 0;
-    int first_valid = 0;
     
-    if (steps > 500) steps = 500;
-    
+    /* Find function indices */
     xidx = get_func_index(xfunc);
     yidx = get_func_index(yfunc);
     
@@ -878,19 +728,15 @@ int do_parametric_text(const char *xfunc, const char *yfunc,
         return 0;
     }
     
-    apf_sub(&t_range, tmax, tmin);
-    {
-        apf steps_apf;
-        apf_from_int(&steps_apf, steps);
-        apf_div(&dt, &t_range, &steps_apf);
-    }
+    if (steps > 2000) steps = 2000;
+    dt = (tmax - tmin) / steps;
     
-    /* First pass: find range */
-    apf_copy(&t, tmin);
+    /* First pass: compute values and find range */
     for (i = 0; i < steps; i++) {
         apfc tval, xres, yres;
+        t = tmin + i * dt;
         
-        apf_copy(&tval.re, &t);
+        apf_from_double(&tval.re, t);
         apf_zero(&tval.im);
         
         if (eval_user_func(&xres, xidx, &tval) && 
@@ -898,25 +744,18 @@ int do_parametric_text(const char *xfunc, const char *yfunc,
             !apf_isnan(&xres.re) && !apf_isnan(&yres.re) &&
             !apf_isinf(&xres.re) && !apf_isinf(&yres.re)) {
             
-            if (!first_valid) {
-                apf_copy(&xmin_a, &xres.re);
-                apf_copy(&xmax_a, &xres.re);
-                apf_copy(&ymin_a, &yres.re);
-                apf_copy(&ymax_a, &yres.re);
-                first_valid = 1;
-            } else {
-                if (apf_cmp(&xres.re, &xmin_a) < 0) apf_copy(&xmin_a, &xres.re);
-                if (apf_cmp(&xres.re, &xmax_a) > 0) apf_copy(&xmax_a, &xres.re);
-                if (apf_cmp(&yres.re, &ymin_a) < 0) apf_copy(&ymin_a, &yres.re);
-                if (apf_cmp(&yres.re, &ymax_a) > 0) apf_copy(&ymax_a, &yres.re);
-            }
-            px_arr[i] = 1;  /* Mark valid */
+            xs[i] = apf_to_double(&xres.re);
+            ys[i] = apf_to_double(&yres.re);
+            
+            if (xs[i] < xmin) xmin = xs[i];
+            if (xs[i] > xmax) xmax = xs[i];
+            if (ys[i] < ymin) ymin = ys[i];
+            if (ys[i] > ymax) ymax = ys[i];
             valid_count++;
         } else {
-            px_arr[i] = -1;  /* Mark invalid */
+            xs[i] = 1e30;  /* Mark invalid */
+            ys[i] = 1e30;
         }
-        
-        apf_add(&t, &t, &dt);
     }
     
     if (valid_count == 0) {
@@ -926,67 +765,32 @@ int do_parametric_text(const char *xfunc, const char *yfunc,
     
     /* Add margin */
     {
-        apf margin, twenty, x_range, y_range;
-        apf_from_int(&twenty, 20);
-        
-        apf_sub(&x_range, &xmax_a, &xmin_a);
-        apf_div(&margin, &x_range, &twenty);
-        apf_sub(&xmin_a, &xmin_a, &margin);
-        apf_add(&xmax_a, &xmax_a, &margin);
-        
-        apf_sub(&y_range, &ymax_a, &ymin_a);
-        apf_div(&margin, &y_range, &twenty);
-        apf_sub(&ymin_a, &ymin_a, &margin);
-        apf_add(&ymax_a, &ymax_a, &margin);
+        double xmargin = (xmax - xmin) * 0.05;
+        double ymargin = (ymax - ymin) * 0.05;
+        if (xmargin < 0.1) xmargin = 0.1;
+        if (ymargin < 0.1) ymargin = 0.1;
+        xmin -= xmargin; xmax += xmargin;
+        ymin -= ymargin; ymax += ymargin;
     }
     
-    /* Second pass: compute screen coords */
-    apf_copy(&t, tmin);
-    for (i = 0; i < steps; i++) {
-        if (px_arr[i] == 1) {
-            apfc tval, xres, yres;
-            apf tmp, norm, x_range, y_range;
-            
-            apf_copy(&tval.re, &t);
-            apf_zero(&tval.im);
-            
-            eval_user_func(&xres, xidx, &tval);
-            eval_user_func(&yres, yidx, &tval);
-            
-            apf_sub(&x_range, &xmax_a, &xmin_a);
-            apf_sub(&tmp, &xres.re, &xmin_a);
-            apf_div(&norm, &tmp, &x_range);
-            apf_from_int(&tmp, width - 1);
-            apf_mul(&norm, &norm, &tmp);
-            px_arr[i] = (int)apf_to_long(&norm);
-            
-            apf_sub(&y_range, &ymax_a, &ymin_a);
-            apf_sub(&tmp, &yres.re, &ymin_a);
-            apf_div(&norm, &tmp, &y_range);
-            apf_from_int(&tmp, height - 1);
-            apf_mul(&norm, &norm, &tmp);
-            py_arr[i] = (height - 1) - (int)apf_to_long(&norm);
-        } else {
-            px_arr[i] = -1;
-            py_arr[i] = -1;
-        }
-        
-        apf_add(&t, &t, &dt);
-    }
-    
-    /* Clear screen and plot */
+    /* Clear screen */
     for (row = 0; row < height; row++) {
         for (col = 0; col < width; col++) {
             screen[row][col] = ' ';
         }
     }
     
-    printf("\nParametric: %s(t), %s(t)  t=[%ld, %ld]\n\n", 
-           xfunc, yfunc, apf_to_long(tmin), apf_to_long(tmax));
+    printf("\nParametric: %s(t), %s(t)  t=[%.2f, %.2f]\n\n", xfunc, yfunc, tmin, tmax);
     
+    /* Plot points */
     for (i = 0; i < steps; i++) {
-        int px = px_arr[i];
-        int py = py_arr[i];
+        int px, py;
+        if (xs[i] > 1e20) continue;  /* Skip invalid */
+        
+        px = (int)((xs[i] - xmin) / (xmax - xmin) * (width - 1));
+        py = (int)((ys[i] - ymin) / (ymax - ymin) * (height - 1));
+        py = (height - 1) - py;
+        
         if (px >= 0 && px < width && py >= 0 && py < height) {
             if (screen[py][px] == ' ') screen[py][px] = '.';
             else if (screen[py][px] == '.') screen[py][px] = '*';
@@ -996,8 +800,8 @@ int do_parametric_text(const char *xfunc, const char *yfunc,
     
     /* Print */
     for (row = 0; row < height; row++) {
-        if (row == 0) printf("%7ld |", apf_to_long(&ymax_a));
-        else if (row == height - 1) printf("%7ld |", apf_to_long(&ymin_a));
+        if (row == 0) printf("%7.1f |", ymax);
+        else if (row == height - 1) printf("%7.1f |", ymin);
         else printf("        |");
         for (col = 0; col < width; col++) printf("%c", screen[row][col]);
         printf("\n");
@@ -1006,9 +810,13 @@ int do_parametric_text(const char *xfunc, const char *yfunc,
     printf("        +");
     for (col = 0; col < width; col++) printf("-");
     printf("\n");
-    printf("        %-7ld", apf_to_long(&xmin_a));
+    printf("        %-7.1f", xmin);
     for (col = 0; col < width - 14; col++) printf(" ");
-    printf("%7ld\n\n", apf_to_long(&xmax_a));
+    printf("%7.1f\n\n", xmax);
     
     return 1;
 }
+
+#endif /* !SCALC_MEDIUM etc - chaotic systems */
+
+#endif

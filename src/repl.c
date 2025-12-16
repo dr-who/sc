@@ -116,6 +116,18 @@ int read_line(char *buf, int max_len)
     int len = 0;
     int c;
     
+    /* For pipe/redirect input, use simple fgets */
+    if (!isatty(STDIN_FILENO)) {
+        if (fgets(buf, max_len, stdin) == NULL) {
+            return -1;
+        }
+        len = strlen(buf);
+        if (len > 0 && buf[len-1] == '\n') {
+            buf[--len] = '\0';
+        }
+        return len;
+    }
+    
     enable_raw_mode();
     history_pos = history_count;
     

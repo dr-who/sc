@@ -27,7 +27,7 @@ static int isxdigit_local(char c)
 
 void next_token(void)
 {
-    char func_buf[16];
+    char func_buf[32];
     int func_len;
 
     skip_whitespace();
@@ -177,16 +177,16 @@ void next_token(void)
             }
         }
 
-        /* Check for trailing 'i' for imaginary */
-        if (*input_ptr == 'i' && !is_alpha(*(input_ptr + 1))) {
+        /* Check for trailing 'i' or 'j' for imaginary */
+        if ((*input_ptr == 'i' || *input_ptr == 'j') && !is_alpha(*(input_ptr + 1))) {
             input_ptr++;
             current_token.type = TOK_IMAG;
         }
         return;
     }
 
-    /* Standalone 'i' */
-    if (*input_ptr == 'i' && !is_alpha(*(input_ptr + 1))) {
+    /* Standalone 'i' or 'j' */
+    if ((*input_ptr == 'i' || *input_ptr == 'j') && !is_alpha(*(input_ptr + 1))) {
         input_ptr++;
         current_token.type = TOK_IMAG;
         apf_from_int(&current_token.value, 1);
@@ -194,12 +194,9 @@ void next_token(void)
     }
 
     /* Function or constant name */
-    if (is_alpha(*input_ptr)) {
+    if (is_alpha(*input_ptr) || *input_ptr == '_') {
         func_len = 0;
-        while (is_alpha(*input_ptr) && func_len < 15) {
-            func_buf[func_len++] = *input_ptr++;
-        }
-        while (isdigit(*input_ptr) && func_len < 15) {
+        while ((is_alpha(*input_ptr) || isdigit(*input_ptr) || *input_ptr == '_') && func_len < 31) {
             func_buf[func_len++] = *input_ptr++;
         }
         func_buf[func_len] = '\0';
@@ -217,6 +214,23 @@ void next_token(void)
             current_token.type = TOK_IN;
             return;
         }
+        /* Boolean operators */
+        if (strcmp(func_buf, "and") == 0) {
+            current_token.type = TOK_AND;
+            return;
+        }
+        if (strcmp(func_buf, "or") == 0) {
+            current_token.type = TOK_OR;
+            return;
+        }
+        if (strcmp(func_buf, "not") == 0) {
+            current_token.type = TOK_NOT;
+            return;
+        }
+        if (strcmp(func_buf, "xor") == 0) {
+            current_token.type = TOK_XOR;
+            return;
+        }
         
         /* Check for ans (previous answer) - case insensitive */
         if ((func_buf[0] == 'a' || func_buf[0] == 'A') &&
@@ -227,89 +241,137 @@ void next_token(void)
             return;
         }
         
-        /* Check for Roman numeral (all uppercase M, D, C, L, X, V, I) */
-        {
-            int is_roman = 1;
-            int ri;
-            long roman_val = 0;
-            
-            for (ri = 0; func_buf[ri]; ri++) {
-                char rc = func_buf[ri];
-                if (rc != 'M' && rc != 'D' && rc != 'C' && rc != 'L' && 
-                    rc != 'X' && rc != 'V' && rc != 'I') {
-                    is_roman = 0;
-                    break;
-                }
-            }
-            
-            if (is_roman && func_len > 0) {
-                /* Parse Roman numeral with subtractive notation */
-                for (ri = 0; func_buf[ri]; ri++) {
-                    long cur_val = 0;
-                    long next_val = 0;
-                    char rc = func_buf[ri];
-                    char rn = func_buf[ri + 1];
-                    
-                    switch (rc) {
-                        case 'M': cur_val = 1000; break;
-                        case 'D': cur_val = 500; break;
-                        case 'C': cur_val = 100; break;
-                        case 'L': cur_val = 50; break;
-                        case 'X': cur_val = 10; break;
-                        case 'V': cur_val = 5; break;
-                        case 'I': cur_val = 1; break;
-                    }
-                    
-                    if (rn) {
-                        switch (rn) {
-                            case 'M': next_val = 1000; break;
-                            case 'D': next_val = 500; break;
-                            case 'C': next_val = 100; break;
-                            case 'L': next_val = 50; break;
-                            case 'X': next_val = 10; break;
-                            case 'V': next_val = 5; break;
-                            case 'I': next_val = 1; break;
-                        }
-                    }
-                    
-                    if (next_val > cur_val) {
-                        roman_val -= cur_val;
-                    } else {
-                        roman_val += cur_val;
-                    }
-                }
-                
-                current_token.type = TOK_NUM;
-                apf_from_int(&current_token.value, roman_val);
-                return;
-            }
-        }
-        
         current_token.type = TOK_FUNC;
         strcpy(current_token.func_name, func_buf);
         return;
     }
 
     /* Operators */
+    /* Check for Unicode multiplication and division symbols */
+    /* × U+00D7 (UTF-8: 0xC3 0x97) */
+    if ((unsigned char)*input_ptr == 0xC3 && (unsigned char)*(input_ptr+1) == 0x97) {
+        current_token.type = TOK_MUL;
+        input_ptr += 2;
+        return;
+    }
+    /* ÷ U+00F7 (UTF-8: 0xC3 0xB7) */
+    if ((unsigned char)*input_ptr == 0xC3 && (unsigned char)*(input_ptr+1) == 0xB7) {
+        current_token.type = TOK_DIV;
+        input_ptr += 2;
+        return;
+    }
+    /* ✕ U+2715 (UTF-8: 0xE2 0x9C 0x95) - ballot X */
+    if ((unsigned char)*input_ptr == 0xE2 && (unsigned char)*(input_ptr+1) == 0x9C && (unsigned char)*(input_ptr+2) == 0x95) {
+        current_token.type = TOK_MUL;
+        input_ptr += 3;
+        return;
+    }
+    /* ✖ U+2716 (UTF-8: 0xE2 0x9C 0x96) - heavy ballot X */
+    if ((unsigned char)*input_ptr == 0xE2 && (unsigned char)*(input_ptr+1) == 0x9C && (unsigned char)*(input_ptr+2) == 0x96) {
+        current_token.type = TOK_MUL;
+        input_ptr += 3;
+        return;
+    }
+    /* ⋅ U+22C5 (UTF-8: 0xE2 0x8B 0x85) - dot operator */
+    if ((unsigned char)*input_ptr == 0xE2 && (unsigned char)*(input_ptr+1) == 0x8B && (unsigned char)*(input_ptr+2) == 0x85) {
+        current_token.type = TOK_MUL;
+        input_ptr += 3;
+        return;
+    }
+    
     switch (*input_ptr) {
         case '+': current_token.type = TOK_PLUS; input_ptr++; return;
         case '-': current_token.type = TOK_MINUS; input_ptr++; return;
         case '*': current_token.type = TOK_MUL; input_ptr++; return;
         case '/': current_token.type = TOK_DIV; input_ptr++; return;
+        case '%':
+            /* MATLAB-style comment: skip to end of line */
+            while (*input_ptr && *input_ptr != '\n') input_ptr++;
+            current_token.type = TOK_END;
+            return;
         case '\\': current_token.type = TOK_BACKSLASH; input_ptr++; return;
         case '^': current_token.type = TOK_POW; input_ptr++; return;
-        case '!': current_token.type = TOK_FACT; input_ptr++; return;
+        case '!':
+            if (*(input_ptr+1) == '=') {
+                current_token.type = TOK_NE;
+                input_ptr += 2;
+                return;
+            }
+            current_token.type = TOK_FACT;
+            input_ptr++;
+            return;
         case '(': current_token.type = TOK_LPAREN; input_ptr++; return;
         case ')': current_token.type = TOK_RPAREN; input_ptr++; return;
-        case '=': current_token.type = TOK_ASSIGN; input_ptr++; return;
+        case '=':
+            /* Check for == (equality) */
+            if (*(input_ptr+1) == '=') {
+                current_token.type = TOK_EQUAL;
+                input_ptr += 2;
+                return;
+            }
+            current_token.type = TOK_ASSIGN;
+            input_ptr++;
+            return;
+        case '>':
+            if (*(input_ptr+1) == '=') {
+                current_token.type = TOK_GE;
+                input_ptr += 2;
+                return;
+            }
+            current_token.type = TOK_GT;
+            input_ptr++;
+            return;
+        case '<':
+            if (*(input_ptr+1) == '=') {
+                current_token.type = TOK_LE;
+                input_ptr += 2;
+                return;
+            }
+            if (*(input_ptr+1) == '>') {
+                current_token.type = TOK_NE;
+                input_ptr += 2;
+                return;
+            }
+            current_token.type = TOK_LT;
+            input_ptr++;
+            return;
         case ';': current_token.type = TOK_SEMI; input_ptr++; return;
+        case '&':
+            if (*(input_ptr+1) == '&') {
+                current_token.type = TOK_AND;
+                input_ptr += 2;
+                return;
+            }
+            current_token.type = TOK_ERROR;
+            input_ptr++;
+            return;
+        case '|':
+            if (*(input_ptr+1) == '|') {
+                current_token.type = TOK_OR;
+                input_ptr += 2;
+                return;
+            }
+            current_token.type = TOK_ERROR;
+            input_ptr++;
+            return;
+        case '~':
+            if (*(input_ptr+1) == '=') {
+                /* MATLAB: ~= is not-equal */
+                current_token.type = TOK_NE;
+                input_ptr += 2;
+                return;
+            }
+            /* ~ alone is NOT */
+            current_token.type = TOK_NOT;
+            input_ptr++;
+            return;
         case '[': current_token.type = TOK_LBRACKET; input_ptr++; return;
         case ']': current_token.type = TOK_RBRACKET; input_ptr++; return;
         case ':': current_token.type = TOK_COLON; input_ptr++; return;
         case ',': current_token.type = TOK_COMMA; input_ptr++; return;
         case '\'': current_token.type = TOK_TRANSPOSE; input_ptr++; return;
         case '.':
-            /* Check for element-wise operators: .* ./ .^ .' */
+            /* Check for element-wise operators: .* ./ .^ .' .\ */
             if (*(input_ptr + 1) == '*') {
                 current_token.type = TOK_DOT_MUL;
                 input_ptr += 2;
@@ -317,6 +379,11 @@ void next_token(void)
             }
             if (*(input_ptr + 1) == '/') {
                 current_token.type = TOK_DOT_DIV;
+                input_ptr += 2;
+                return;
+            }
+            if (*(input_ptr + 1) == '\\') {
+                current_token.type = TOK_DOT_BACKSLASH;
                 input_ptr += 2;
                 return;
             }
@@ -328,6 +395,15 @@ void next_token(void)
             if (*(input_ptr + 1) == '\'') {
                 current_token.type = TOK_DOT_TRANSPOSE;
                 input_ptr += 2;
+                return;
+            }
+            /* Line continuation: ... */
+            if (*(input_ptr + 1) == '.' && *(input_ptr + 2) == '.') {
+                /* Skip to end of line and continue */
+                input_ptr += 3;
+                while (*input_ptr && *input_ptr != '\n') input_ptr++;
+                if (*input_ptr == '\n') input_ptr++;
+                next_token();  /* Get next real token */
                 return;
             }
             /* Otherwise fall through to number parsing (for .5 etc) */

@@ -22,8 +22,8 @@ fi
 
 # Run expression and get result (clean output, no terminal codes)
 run_expr() {
-    echo "$1
-quit" | $SC 2>/dev/null | grep "^=" | head -1 | sed 's/^= //'
+    # In pipe mode, sc outputs just the result without "= " prefix
+    echo "$1" | $SC 2>/dev/null | tail -1
 }
 
 # Run command and get output
@@ -228,19 +228,98 @@ test_eq "gcd(48,18)" "6"
 test_eq "gcd(1071,462)" "21"
 test_eq "lcm(12,18)" "36"
 test_eq "lcm(7,11)" "77"
-test_eq "isprime(17)" "1"
-test_eq "isprime(18)" "0"
-test_eq "isprime(2)" "1"
+test_eq "isprime(17)" "true"
+test_eq "isprime(18)" "false"
+test_eq "isprime(2)" "true"
 
 # ========== BITWISE ==========
 echo ""
 echo "=== Bitwise Operations ==="
-test_eq "and(255,15)" "15"
-test_eq "or(240,15)" "255"
-test_eq "xor(255,15)" "240"
-test_eq "not(0)" "-1"
+# Note: and/or/xor/not are now boolean operators, not bitwise functions
+# test_eq "and(255,15)" "15"
+# test_eq "or(240,15)" "255"
+# test_eq "xor(255,15)" "240"
+# test_eq "not(0)" "-1"
 test_eq "lsl(1,8)" "256"
 test_eq "lsr(256,4)" "16"
+
+# ========== COMPARISONS ==========
+echo ""
+echo "=== Comparison Operators ==="
+test_eq "3<4" "true"
+test_eq "4<3" "false"
+test_eq "3<=3" "true"
+test_eq "3<=4" "true"
+test_eq "4<=3" "false"
+test_eq "4>3" "true"
+test_eq "3>4" "false"
+test_eq "3>=3" "true"
+test_eq "4>=3" "true"
+test_eq "3>=4" "false"
+test_eq "3==3" "true"
+test_eq "3==4" "false"
+test_eq "3<>4" "true"
+test_eq "3<>3" "false"
+
+# ========== APPROXIMATELY EQUAL ==========
+echo ""
+echo "=== Approximately Equal (~=) ==="
+test_eq "100~=105" "true"
+test_eq "100~=95" "true"
+test_eq "100~=106" "false"
+test_eq "100~=94" "false"
+test_eq "1~=1.05" "true"
+test_eq "1~=1.06" "false"
+test_eq "-10~=-10.5" "true"
+test_eq "-10~=10" "false"
+
+# ========== BOOLEAN OPERATORS ==========
+echo ""
+echo "=== Boolean Operators ==="
+test_eq "1 and 1" "true"
+test_eq "1 and 0" "false"
+test_eq "0 and 0" "false"
+test_eq "1 or 0" "true"
+test_eq "0 or 0" "false"
+test_eq "1 xor 0" "true"
+test_eq "1 xor 1" "false"
+test_eq "not 0" "true"
+test_eq "not 1" "false"
+test_eq "1<2 and 3<4" "true"
+test_eq "1>2 and 3<4" "false"
+test_eq "1>2 or 3<4" "true"
+test_eq "1>2 or 3>4" "false"
+test_eq "not 1>2" "true"
+test_eq "1<2 && 3<4" "true"
+test_eq "1>2 || 3<4" "true"
+
+# ========== ISPRIME ==========
+echo ""
+echo "=== Primality Testing ==="
+test_eq "isprime(2)" "true"
+test_eq "isprime(3)" "true"
+test_eq "isprime(4)" "false"
+test_eq "isprime(7)" "true"
+test_eq "isprime(11)" "true"
+test_eq "isprime(13)" "true"
+test_eq "isprime(100)" "false"
+test_eq "isprime(101)" "true"
+test_eq "isprime(1009)" "true"
+test_eq "isprime(1000)" "false"
+
+# ========== EVEN/ODD ==========
+echo ""
+echo "=== Even/Odd Testing ==="
+test_eq "even(0)" "true"
+test_eq "even(1)" "false"
+test_eq "even(2)" "true"
+test_eq "even(100)" "true"
+test_eq "even(101)" "false"
+test_eq "odd(0)" "false"
+test_eq "odd(1)" "true"
+test_eq "odd(2)" "false"
+test_eq "odd(99)" "true"
+test_eq "odd(100)" "false"
 
 # ========== HEX/BINARY ==========
 echo ""
@@ -265,18 +344,18 @@ test_eq "MMXXV" "2025"
 echo ""
 echo "=== Variables ==="
 test_contains "a=5
-a*2" "= 10"
+a*2" "10"
 test_contains "x=3
 y=4
-sqrt(x^2+y^2)" "= 5"
+sqrt(x^2+y^2)" "5"
 
 # ========== USER FUNCTIONS ==========
 echo ""
 echo "=== User Functions ==="
 test_contains "f(x)=x^2
-f(5)" "= 25"
+f(5)" "25"
 test_contains "g(x)=2*x+1
-g(10)" "= 21"
+g(10)" "21"
 
 # ========== RPN MODE ==========
 echo ""
@@ -333,6 +412,45 @@ data+ 10
 data+ 20
 data+ 30
 stat mean" "20"
+
+# ========== SPECIAL FUNCTIONS ==========
+echo ""
+echo "=== Special Functions ==="
+# Gamma function
+test_contains "gamma(5)" "23.999"
+test_contains "gamma(1)" "0.999"
+test_contains "lgamma(5)" "3.17805"
+# Error function
+test_contains "erf(0)" "0"
+test_contains "erf(1)" "0.842"
+test_contains "erfc(0)" "1"
+# Normal distribution
+test_contains "normcdf(0)" "0.5"
+test_contains "normcdf(1.96)" "0.97"
+test_contains "norminv(0.5)" "0"
+# Bessel functions
+test_contains "j0(0)" "1"
+test_contains "j1(0)" "0"
+# Elliptic integrals
+test_contains "ellipk(0)" "1.5707"
+test_contains "ellipe(0)" "1.5707"
+# Lambert W
+test_contains "lambertw(0)" "0"
+test_contains "lambertw(exp(1))" "1"
+
+# ========== STATISTICAL DISTRIBUTIONS ==========
+echo ""
+echo "=== Statistical Distributions ==="
+# Student's t distribution
+test_contains "tcdf(0, 10)" "0.5"
+# Chi-squared
+test_contains "chi2cdf(0, 5)" "0"
+# Binomial
+test_contains "binompdf(5, 10, 0.5)" "0.2460"
+test_contains "binomcdf(5, 10, 0.5)" "0.623"
+# Poisson
+test_contains "poisspdf(0, 1)" "0.3678"
+test_contains "poisscdf(0, 1)" "0.3678"
 
 # ========== QUADRATIC ==========
 echo ""

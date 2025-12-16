@@ -1,0 +1,49 @@
+# Makefile.dos - sc Scientific Calculator for DOS using Watcom C
+#
+# On DOS with Watcom wmake:
+#   wmake -f Makefile.dos
+#
+# On Linux/Mac with Open Watcom cross-compiler:
+#   make -f Makefile.dos
+
+CC = wcl
+# Use huge model (-mh) to allow data > 64K
+# -we = warnings as errors
+# -wcd=124 = disable "comparison result always 0" (false positive for range checks)
+# -wcd=201 = disable "unreachable code" (false positive for compile-time constants)
+CFLAGS = -mh -ox -d0 -w4 -we -wcd=124 -wcd=201 -DSCALC_MEDIUM -DHAVE_CONFIG_H
+
+# Source files for DOS - ALL features enabled
+# Everything uses soft-float APF - no double/float anywhere
+SRC = src/apf.c src/apfx.c src/apfc.c \
+      src/lexer.c src/parser.c src/runtime.c src/format.c \
+      src/commands.c src/repl.c src/rpn.c src/mathx.c \
+      src/solver.c src/tvm.c src/newton.c src/orbital.c \
+      src/stats.c src/plot.c \
+      src/matrix.c src/matrix_ops.c src/matrix_linalg.c src/matrix_rand.c \
+      src/main.c
+
+# Default: build 128-bit version only (most useful for DOS)
+all: sc.exe
+
+# 128-bit version (8 limbs, default)
+sc.exe: $(SRC)
+	$(CC) $(CFLAGS) -DAP_LIMBS=8 -fe=sc.exe $(SRC)
+
+# 64-bit version (4 limbs) - smaller, faster
+sc-64.exe: $(SRC)
+	$(CC) $(CFLAGS) -DAP_LIMBS=4 -fe=sc-64.exe $(SRC)
+
+# Individual targets
+sc: sc.exe
+sc-64: sc-64.exe
+
+# Clean
+clean:
+	rm -f *.obj *.exe 2>/dev/null || del *.obj *.exe 2>NUL
+
+# Test
+test: sc.exe
+	echo test | ./sc.exe
+
+.PHONY: all sc sc-64 clean test

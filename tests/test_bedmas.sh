@@ -201,6 +201,22 @@ test_eq "2/1/2/1/2" "0.5"
 
 # =============================================
 echo ""
+echo -e "${CYAN}=== Modulo Operator ===${NC}"
+# =============================================
+
+test_eq "10%3" "1"
+test_eq "17%5" "2"
+test_eq "100%7" "2"
+test_eq "15%5" "0"
+test_eq "23%10" "3"
+test_eq "-10%3" "2"          # Floor mod: -10 - 3*floor(-10/3) = -10 - 3*(-4) = 2
+test_eq "10%-3" "-2"
+test_eq "mod(10, 3)" "1"
+test_eq "mod(17, 5)" "2"
+test_eq "7.5%2" "1.5"
+
+# =============================================
+echo ""
 echo -e "${CYAN}=== Subtraction Edge Cases ===${NC}"
 # =============================================
 
@@ -290,6 +306,166 @@ test_eq "(6/2)*(4/2)" "6"
 test_eq "(10/5)*(20/4)" "10"
 test_eq "(1+1)*(2+2)" "8"
 test_eq "(3-1)*(5-2)" "6"
+
+# =============================================
+echo ""
+echo -e "${CYAN}=== Unicode Operators × and ÷ ===${NC}"
+# =============================================
+
+test_eq "3 × 4" "12"
+test_eq "12 ÷ 4" "3"
+test_eq "3 + 4 × (8 - 2) - 10 ÷ 5" "25"
+test_eq "2 × 3 + 4 ÷ 2" "8"
+test_eq "10 ÷ 2 × 5" "25"
+
+# =============================================
+echo ""
+echo -e "${CYAN}=== Equality Checking ===${NC}"
+# =============================================
+
+# Using = for equality
+result=$($SC "1+3=4" 2>/dev/null | tr -d '\n\r')
+if [ "$result" = "true" ]; then
+    echo -e "  ${GREEN}PASS${NC}: 1+3=4 = true"
+    ((PASS++))
+else
+    echo -e "  ${RED}FAIL${NC}: 1+3=4"
+    echo "        got:      '$result'"
+    echo "        expected: 'true'"
+    ((FAIL++))
+fi
+
+result=$($SC "1+3=5" 2>/dev/null | tr -d '\n\r')
+if [ "$result" = "false" ]; then
+    echo -e "  ${GREEN}PASS${NC}: 1+3=5 = false"
+    ((PASS++))
+else
+    echo -e "  ${RED}FAIL${NC}: 1+3=5"
+    echo "        got:      '$result'"
+    echo "        expected: 'false'"
+    ((FAIL++))
+fi
+
+# Using == for equality
+result=$($SC "2*3==6" 2>/dev/null | tr -d '\n\r')
+if [ "$result" = "true" ]; then
+    echo -e "  ${GREEN}PASS${NC}: 2*3==6 = true"
+    ((PASS++))
+else
+    echo -e "  ${RED}FAIL${NC}: 2*3==6"
+    echo "        got:      '$result'"
+    echo "        expected: 'true'"
+    ((FAIL++))
+fi
+
+result=$($SC "2*3==7" 2>/dev/null | tr -d '\n\r')
+if [ "$result" = "false" ]; then
+    echo -e "  ${GREEN}PASS${NC}: 2*3==7 = false"
+    ((PASS++))
+else
+    echo -e "  ${RED}FAIL${NC}: 2*3==7"
+    echo "        got:      '$result'"
+    echo "        expected: 'false'"
+    ((FAIL++))
+fi
+
+# More equality tests
+result=$($SC "sqrt(4)==2" 2>/dev/null | tr -d '\n\r')
+if [ "$result" = "true" ]; then
+    echo -e "  ${GREEN}PASS${NC}: sqrt(4)==2 = true"
+    ((PASS++))
+else
+    echo -e "  ${RED}FAIL${NC}: sqrt(4)==2"
+    echo "        got:      '$result'"
+    echo "        expected: 'true'"
+    ((FAIL++))
+fi
+
+result=$($SC "2^10=1024" 2>/dev/null | tr -d '\n\r')
+if [ "$result" = "true" ]; then
+    echo -e "  ${GREEN}PASS${NC}: 2^10=1024 = true"
+    ((PASS++))
+else
+    echo -e "  ${RED}FAIL${NC}: 2^10=1024"
+    echo "        got:      '$result'"
+    echo "        expected: 'true'"
+    ((FAIL++))
+fi
+
+# =============================================
+echo ""
+echo -e "${CYAN}=== Comparison Operators ===${NC}"
+# =============================================
+
+result=$($SC "3<4" 2>/dev/null | tr -d '\n\r')
+if [ "$result" = "true" ]; then
+    echo -e "  ${GREEN}PASS${NC}: 3<4 = true"
+    ((PASS++))
+else
+    echo -e "  ${RED}FAIL${NC}: 3<4"
+    echo "        got:      '$result'"
+    ((FAIL++))
+fi
+
+result=$($SC "4<3" 2>/dev/null | tr -d '\n\r')
+if [ "$result" = "false" ]; then
+    echo -e "  ${GREEN}PASS${NC}: 4<3 = false"
+    ((PASS++))
+else
+    echo -e "  ${RED}FAIL${NC}: 4<3"
+    echo "        got:      '$result'"
+    ((FAIL++))
+fi
+
+result=$($SC "4<=4" 2>/dev/null | tr -d '\n\r')
+if [ "$result" = "true" ]; then
+    echo -e "  ${GREEN}PASS${NC}: 4<=4 = true"
+    ((PASS++))
+else
+    echo -e "  ${RED}FAIL${NC}: 4<=4"
+    echo "        got:      '$result'"
+    ((FAIL++))
+fi
+
+result=$($SC "5>3" 2>/dev/null | tr -d '\n\r')
+if [ "$result" = "true" ]; then
+    echo -e "  ${GREEN}PASS${NC}: 5>3 = true"
+    ((PASS++))
+else
+    echo -e "  ${RED}FAIL${NC}: 5>3"
+    echo "        got:      '$result'"
+    ((FAIL++))
+fi
+
+result=$($SC "5>=5" 2>/dev/null | tr -d '\n\r')
+if [ "$result" = "true" ]; then
+    echo -e "  ${GREEN}PASS${NC}: 5>=5 = true"
+    ((PASS++))
+else
+    echo -e "  ${RED}FAIL${NC}: 5>=5"
+    echo "        got:      '$result'"
+    ((FAIL++))
+fi
+
+result=$($SC "3<>4" 2>/dev/null | tr -d '\n\r')
+if [ "$result" = "true" ]; then
+    echo -e "  ${GREEN}PASS${NC}: 3<>4 = true"
+    ((PASS++))
+else
+    echo -e "  ${RED}FAIL${NC}: 3<>4"
+    echo "        got:      '$result'"
+    ((FAIL++))
+fi
+
+result=$($SC "4<>4" 2>/dev/null | tr -d '\n\r')
+if [ "$result" = "false" ]; then
+    echo -e "  ${GREEN}PASS${NC}: 4<>4 = false"
+    ((PASS++))
+else
+    echo -e "  ${RED}FAIL${NC}: 4<>4"
+    echo "        got:      '$result'"
+    ((FAIL++))
+fi
 
 # =============================================
 echo ""

@@ -6,12 +6,33 @@
 #ifndef MATRIX_H
 #define MATRIX_H
 
+#include "config.h"
 #include "apfc.h"
 
-/* Maximum matrix dimensions (memory constrained for DOS) */
-/* Maximum matrix dimensions - kept small for DOS 16-bit memory limits */
-#define MAT_MAX_ROWS 6
-#define MAT_MAX_COLS 6
+/* Far memory macro for DOS - puts large arrays outside 64KB DGROUP */
+#ifndef SC_FAR
+  #ifdef __WATCOMC__
+    #define SC_FAR __far
+  #else
+    #define SC_FAR
+  #endif
+#endif
+
+/* Maximum matrix dimensions */
+#ifndef MAT_MAX_ROWS
+  #if defined(PLATFORM_DOS) || defined(SCALC_MEDIUM)
+    #define MAT_MAX_ROWS 4
+  #else
+    #define MAT_MAX_ROWS 10
+  #endif
+#endif
+#ifndef MAT_MAX_COLS
+  #if defined(PLATFORM_DOS) || defined(SCALC_MEDIUM)
+    #define MAT_MAX_COLS 4
+  #else
+    #define MAT_MAX_COLS 10
+  #endif
+#endif
 #define MAT_MAX_ELEM (MAT_MAX_ROWS * MAT_MAX_COLS)
 
 /* Matrix structure */
@@ -93,6 +114,7 @@ void mat_min(apfc *r, const matrix_t *m);
 void mat_max(apfc *r, const matrix_t *m);
 void mat_prod(apfc *r, const matrix_t *m);
 void mat_std(apfc *r, const matrix_t *m);
+void mat_var(apfc *r, const matrix_t *m);
 void mat_median(apfc *r, const matrix_t *m);
 void mat_sum_rows(matrix_t *r, const matrix_t *m);
 void mat_sum_cols(matrix_t *r, const matrix_t *m);
