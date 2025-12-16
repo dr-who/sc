@@ -4,7 +4,7 @@ A high-precision scientific calculator designed to be the ultimate portable calc
 
 ## Highlights
 
-- **128-bit Soft-Float Precision**: ~34 significant decimal digits, IEEE 754-2008 compliant
+- **64/128/256++-bit Soft-Float Precision**: IEEE 754-2008 compliant
 - **Pure C89**: No float/double in core library - runs on 8-bit through 64-bit platforms
 - **Complex Numbers**: Full arithmetic with `i` as imaginary unit
 - **Matrices**: Up to 8×8 with determinant, inverse, eigenvalues, QR decomposition
@@ -414,7 +414,7 @@ The APF (Arbitrary Precision Float) library is completely standalone:
 
 ## Technical Notes
 
-### Precision
+### Precision (in 128-bit mode)
 - 128-bit mantissa = ~38 decimal digits internal precision
 - Display precision configurable 1-37 digits
 - IEEE 754-2008 quadruple precision compatible
