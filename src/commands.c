@@ -2097,16 +2097,12 @@ void cmd_demo_fisheriris(void)
     eval_expr_line("data(1:5,:)", 0);
     printf("\n");
     
-    printf(">>> mean(data(:,1))  %% Mean sepal length\n");
-    eval_expr_line("mean(data(:,1))", 0);
+    printf(">>> mean(data)   %% Mean of each column\n");
+    eval_expr_line("mean(data)", 0);
     printf("\n");
     
-    printf(">>> mean(data(:,3))  %% Mean petal length\n");
-    eval_expr_line("mean(data(:,3))", 0);
-    printf("\n");
-    
-    printf(">>> std(data(:,3))  %% Std dev petal length\n");
-    eval_expr_line("std(data(:,3))", 0);
+    printf(">>> std(data)    %% Std dev of each column\n");
+    eval_expr_line("std(data)", 0);
     printf("\n");
     
     printf(">>> [min(data(:,3)), max(data(:,3))]  %% Petal length range\n");

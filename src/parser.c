@@ -755,6 +755,55 @@ static int parse_factor(apfc *result)
             return parse_random_func(result, name);
         }
 
+        /* planet("name", t_days) - Get planet position */
+        if (str_eq(name, "planet")) {
+            extern void fn_planet(const char *name, double t_days, double *x, double *y);
+            char planet_name[32];
+            double t_days = 0, px, py;
+            int ni = 0;
+            
+            if (current_token.type != TOK_LPAREN) {
+                printf("Error: expected '(' after 'planet'\n");
+                return 0;
+            }
+            
+            /* Check for string literal */
+            while (*input_ptr == ' ') input_ptr++;
+            if (*input_ptr == '\'' || *input_ptr == '"') {
+                char delim = *input_ptr++;
+                while (*input_ptr && *input_ptr != delim && ni < 31) {
+                    planet_name[ni++] = *input_ptr++;
+                }
+                planet_name[ni] = '\0';
+                if (*input_ptr == delim) input_ptr++;
+                while (*input_ptr == ' ') input_ptr++;
+                
+                /* Check for comma and second arg */
+                if (*input_ptr == ',') {
+                    input_ptr++;
+                    next_token();
+                    if (!parse_expr(&arg)) return 0;
+                    t_days = apf_to_double(&arg.re);
+                } else {
+                    next_token();
+                }
+                
+                if (current_token.type != TOK_RPAREN) {
+                    printf("Error: expected ')'\n");
+                    return 0;
+                }
+                next_token();
+                
+                fn_planet(planet_name, t_days, &px, &py);
+                apf_from_double(&result->re, px);
+                apf_from_double(&result->im, py);
+                return 1;
+            } else {
+                printf("Error: planet() requires quoted string: planet(\"earth\", 0)\n");
+                return 0;
+            }
+        }
+
         /* disp() - MATLAB display function */
 
         if (str_eq(name, "disp")) {
@@ -1986,6 +2035,37 @@ static int parse_factor(apfc *result)
             }
             apfx_logb(&result->re, &arg.re, &arg2.re);
             apf_zero(&result->im);
+            return 1;
+        }
+        
+        /* mandelbrot_iter(x, y, max_iter) - Mandelbrot iteration count */
+        if (str_eq(name, "mandelbrot_iter") || str_eq(name, "mandel")) {
+            extern void fn_mandelbrot_iter(apfc *result, const apfc *cx, const apfc *cy, const apfc *max_iter);
+            apfc cy, max_iter_val;
+            
+            if (current_token.type != TOK_COMMA) {
+                printf("Error: mandelbrot_iter requires (x, y, max_iter)\n");
+                return 0;
+            }
+            next_token();
+            if (!parse_expr(&cy)) return 0;
+            
+            if (current_token.type != TOK_COMMA) {
+                /* Default max_iter = 100 */
+                apf_from_int(&max_iter_val.re, 100);
+                apf_zero(&max_iter_val.im);
+            } else {
+                next_token();
+                if (!parse_expr(&max_iter_val)) return 0;
+            }
+            
+            if (current_token.type != TOK_RPAREN) {
+                printf("Error: expected ')'\n");
+                return 0;
+            }
+            next_token();
+            
+            fn_mandelbrot_iter(result, &arg, &cy, &max_iter_val);
             return 1;
         }
 #ifdef HAVE_GCD
@@ -4410,6 +4490,124 @@ static int parse_value_factor(value_t *result)
                 current_token = saved_tok;
                 next_token();
                 return parse_matrix_func(result, name);
+            }
+            
+            /* MATLAB-style: mean/sum/std/var on matrix returns column-wise results */
+            if (str_eq(name, "mean") || str_eq(name, "sum") || 
+                str_eq(name, "std") || str_eq(name, "sd") || str_eq(name, "var")) {
+                next_token();
+                if (!parse_value(&pv_arg)) return 0;
+                if (current_token.type != TOK_RPAREN) {
+                    printf("Error: expected ')'\n");
+                    return 0;
+                }
+                next_token();
+                
+                if (pv_arg.type == VAL_MATRIX && pv_arg.v.matrix.cols > 1 && pv_arg.v.matrix.rows > 1) {
+                    /* Multi-column matrix: return column-wise results */
+                    extern void mat_mean_cols(matrix_t *r, const matrix_t *m);
+                    extern void mat_std_cols(matrix_t *r, const matrix_t *m);
+                    extern void mat_var_cols(matrix_t *r, const matrix_t *m);
+                    extern void mat_col_sums(matrix_t *r, const matrix_t *m);
+                    
+                    result->type = VAL_MATRIX;
+                    if (str_eq(name, "mean")) {
+                        mat_mean_cols(&result->v.matrix, &pv_arg.v.matrix);
+                    } else if (str_eq(name, "sum")) {
+                        mat_col_sums(&result->v.matrix, &pv_arg.v.matrix);
+                    } else if (str_eq(name, "std") || str_eq(name, "sd")) {
+                        mat_std_cols(&result->v.matrix, &pv_arg.v.matrix);
+                    } else if (str_eq(name, "var")) {
+                        mat_var_cols(&result->v.matrix, &pv_arg.v.matrix);
+                    }
+                    return 1;
+                } else {
+                    /* Vector or scalar: return overall result */
+                    extern void mat_mean(apfc *r, const matrix_t *m);
+                    extern void mat_sum(apfc *r, const matrix_t *m);
+                    extern void mat_std(apfc *r, const matrix_t *m);
+                    extern void mat_var(apfc *r, const matrix_t *m);
+                    
+                    result->type = VAL_SCALAR;
+                    if (pv_arg.type == VAL_SCALAR) {
+                        if (str_eq(name, "mean") || str_eq(name, "sum")) {
+                            result->v.scalar = pv_arg.v.scalar;
+                        } else {
+                            /* std/var of scalar is 0 */
+                            apf_zero(&result->v.scalar.re);
+                            apf_zero(&result->v.scalar.im);
+                        }
+                    } else {
+                        if (str_eq(name, "mean")) {
+                            mat_mean(&result->v.scalar, &pv_arg.v.matrix);
+                        } else if (str_eq(name, "sum")) {
+                            mat_sum(&result->v.scalar, &pv_arg.v.matrix);
+                        } else if (str_eq(name, "std") || str_eq(name, "sd")) {
+                            mat_std(&result->v.scalar, &pv_arg.v.matrix);
+                        } else if (str_eq(name, "var")) {
+                            mat_var(&result->v.scalar, &pv_arg.v.matrix);
+                        }
+                    }
+                    return 1;
+                }
+            }
+            
+            /* MATLAB-style: mean/sum/std/var on multi-column matrix returns column-wise results */
+            if (str_eq(name, "mean") || str_eq(name, "sum") || str_eq(name, "std") || 
+                str_eq(name, "sd") || str_eq(name, "var")) {
+                extern void mat_mean_cols(matrix_t *r, const matrix_t *m);
+                extern void mat_col_sums(matrix_t *r, const matrix_t *m);
+                extern void mat_std_cols(matrix_t *r, const matrix_t *m);
+                extern void mat_var_cols(matrix_t *r, const matrix_t *m);
+                
+                next_token();
+                if (!parse_value(&pv_arg)) return 0;
+                if (current_token.type != TOK_RPAREN) {
+                    printf("Error: expected ')'\n");
+                    return 0;
+                }
+                next_token();
+                
+                if (pv_arg.type == VAL_MATRIX && pv_arg.v.matrix.cols > 1 && pv_arg.v.matrix.rows > 1) {
+                    /* Multi-column matrix: return column-wise results */
+                    result->type = VAL_MATRIX;
+                    if (str_eq(name, "mean")) {
+                        mat_mean_cols(&result->v.matrix, &pv_arg.v.matrix);
+                    } else if (str_eq(name, "sum")) {
+                        mat_col_sums(&result->v.matrix, &pv_arg.v.matrix);
+                    } else if (str_eq(name, "std") || str_eq(name, "sd")) {
+                        mat_std_cols(&result->v.matrix, &pv_arg.v.matrix);
+                    } else if (str_eq(name, "var")) {
+                        mat_var_cols(&result->v.matrix, &pv_arg.v.matrix);
+                    }
+                    return 1;
+                } else if (pv_arg.type == VAL_MATRIX) {
+                    /* Vector or single-column: return scalar */
+                    result->type = VAL_SCALAR;
+                    if (str_eq(name, "mean")) {
+                        extern void mat_mean(apfc *r, const matrix_t *m);
+                        mat_mean(&result->v.scalar, &pv_arg.v.matrix);
+                    } else if (str_eq(name, "sum")) {
+                        extern void mat_sum(apfc *r, const matrix_t *m);
+                        mat_sum(&result->v.scalar, &pv_arg.v.matrix);
+                    } else if (str_eq(name, "std") || str_eq(name, "sd")) {
+                        extern void mat_std(apfc *r, const matrix_t *m);
+                        mat_std(&result->v.scalar, &pv_arg.v.matrix);
+                    } else if (str_eq(name, "var")) {
+                        extern void mat_var(apfc *r, const matrix_t *m);
+                        mat_var(&result->v.scalar, &pv_arg.v.matrix);
+                    }
+                    return 1;
+                } else {
+                    /* Scalar input */
+                    result->type = VAL_SCALAR;
+                    result->v.scalar = pv_arg.v.scalar;
+                    if (str_eq(name, "std") || str_eq(name, "sd") || str_eq(name, "var")) {
+                        apf_zero(&result->v.scalar.re);
+                        apf_zero(&result->v.scalar.im);
+                    }
+                    return 1;
+                }
             }
             
             /* Try table-driven matrix dispatch first */

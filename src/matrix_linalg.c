@@ -293,6 +293,27 @@ void mat_sum_rows(matrix_t *r, const matrix_t *m)
     }
 }
 
+/* Sum each column: returns 1xN row vector */
+void mat_col_sums(matrix_t *r, const matrix_t *m)
+{
+    int i, j;
+    
+    mat_zero(r, 1, m->cols);
+    if (!r->data) return;
+    
+    for (j = 0; j < m->cols; j++) {
+        apfc sum;
+        apf_zero(&sum.re);
+        apf_zero(&sum.im);
+        for (i = 0; i < m->rows; i++) {
+            apfc tmp;
+            apfc_add(&tmp, &sum, &MAT_AT(m, i, j));
+            sum = tmp;
+        }
+        MAT_AT(r, 0, j) = sum;
+    }
+}
+
 void mat_sum_cols(matrix_t *r, const matrix_t *m)
 {
     int i, j;
@@ -1735,6 +1756,40 @@ void mat_std_cols(matrix_t *r, const matrix_t *m)
         } else {
             apf_zero(&MAT_AT(r, 0, j).re);
         }
+        apf_zero(&MAT_AT(r, 0, j).im);
+    }
+}
+
+/* Column variances: returns 1xN row vector - pure APF */
+void mat_var_cols(matrix_t *r, const matrix_t *m)
+{
+    int i, j;
+    apf sum, sum2, mean, var, v_sq, divisor;
+    
+    mat_zero(r, 1, m->cols);
+    if (!r->data) return;
+    
+    apf_from_int(&divisor, m->rows);
+    
+    for (j = 0; j < m->cols; j++) {
+        apf_zero(&sum);
+        apf_zero(&sum2);
+        for (i = 0; i < m->rows; i++) {
+            apf_add(&sum, &sum, &MAT_AT(m, i, j).re);
+            apf_mul(&v_sq, &MAT_AT(m, i, j).re, &MAT_AT(m, i, j).re);
+            apf_add(&sum2, &sum2, &v_sq);
+        }
+        /* mean = sum / n */
+        apf_div(&mean, &sum, &divisor);
+        /* var = sum2/n - mean^2 */
+        apf_div(&var, &sum2, &divisor);
+        apf_mul(&v_sq, &mean, &mean);
+        apf_sub(&var, &var, &v_sq);
+        /* Ensure non-negative */
+        if (apf_cmp_int(&var, 0) < 0) {
+            apf_zero(&var);
+        }
+        MAT_AT(r, 0, j).re = var;
         apf_zero(&MAT_AT(r, 0, j).im);
     }
 }

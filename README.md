@@ -667,3 +667,89 @@ Supported bins: `year`, `month`, `week`, `day`, `hour`, `minute`, `dayname`
 - **Missing data**: `fillmissing(x, method)` - linear interpolation, mean, or previous value
 - **Remove NaN**: `rmmissing(x)` - remove all NaN values from vector
 - **Smoothing**: `smoothdata(x, method, window)` - moving average or Gaussian smoothing
+
+### Interactive Visualization Commands
+
+#### `iplot` - Interactive Function Plotter
+Full-screen function plotting with pan and zoom.
+
+```matlab
+>>> iplot sin(x)           % Plot with default range
+>>> iplot x^2 -5 5         % Plot with custom x range
+>>> iplot sin(x)*cos(2*x)  % Complex expressions
+```
+
+**Controls:**
+- **Arrow keys**: Pan left/right (X) and up/down (Y)
+- **+/-**: Zoom in/out
+- **a**: Toggle auto-Y scaling
+- **r**: Reset to original view
+- **q/ESC**: Exit
+
+#### `mandelbrot` - Mandelbrot Set Viewer
+Interactive fractal explorer with 256-color rendering.
+
+```matlab
+>>> mandelbrot    % Launch viewer
+>>> mandel        % Alias
+```
+
+**Controls:**
+- **Arrow keys**: Pan around
+- **+/-**: Zoom in/out (auto-adjusts iterations)
+- **i/I**: Decrease/increase max iterations
+- **c**: Toggle color/ASCII mode
+- **w/e/s**: Jump to cardioid/elephant valley/seahorse valley
+- **r**: Reset view
+- **q/ESC**: Exit
+
+#### `tscatter` / `planets` / `solar` - Solar System Viewer
+Interactive time-based solar system simulation.
+
+```matlab
+>>> tscatter           % All planets (Mercury through Saturn)
+>>> tscatter inner     % Inner planets (Mercury, Venus, Earth, Mars)
+>>> tscatter outer     % Outer planets (Jupiter, Saturn, Uranus, Neptune)
+>>> tscatter moon      % Earth-Moon system (follows Earth)
+>>> planets all        % Alias for tscatter
+>>> solar              % Alias for tscatter
+```
+
+**Controls:**
+- **←/→**: Step time backward/forward (×10 of dt)
+- **↑/↓**: Increase/decrease time step
+- **Space**: Play/pause animation
+- **+/-**: Zoom in/out
+- **1/2/3**: Preset views (inner/outer/moon)
+- **r**: Reset to t=0
+- **q/ESC**: Exit
+
+### Astronomy Functions
+
+#### `planet("name", t_days)` - Planet Positions
+Returns planet position as complex number (x + iy) in AU (Astronomical Units).
+
+```matlab
+>>> planet("earth", 0)           % Earth at t=0
+= 0.98 + 0.199i
+
+>>> planet("mars", 365)          % Mars after 1 year
+= -1.49 - 0.32i
+
+>>> abs(planet("jupiter", 0))    % Jupiter's distance from sun
+= 5.2
+
+>>> real(planet("venus", 100))   % Venus x-coordinate
+= 0.203
+```
+
+**Available bodies:** sun, mercury, venus, earth, mars, jupiter, saturn, uranus, neptune, moon
+
+#### `mandelbrot_iter(x, y, [max_iter])` - Mandelbrot Iteration Count
+Returns the number of iterations before escape (or max_iter if in set).
+
+```matlab
+>>> mandelbrot_iter(0, 0, 100)      % Origin (in set) = 100
+>>> mandelbrot_iter(-2.5, 0, 100)   % Outside = 1
+>>> mandelbrot_iter(0.5, 0.5, 100)  % Escapes after 5 iterations
+```

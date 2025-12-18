@@ -1416,7 +1416,32 @@ static const FuncEntry func_registry[] = {
     {"plot", FH_PLOT, 1, 3, FF_CONST, "Commands", "plot f(x) [xmin xmax]",
      "Plot a function in the terminal using ASCII art.",
      {"plot sin(x)", "plot sin(x) 0 2*pi", "plot x^2 -2 2", NULL, NULL, NULL},
-     "hplot"},
+     "hplot, iplot, mandelbrot"},
+    
+    {"iplot", FH_IPLOT, 1, 3, FF_CONST, "Commands", "iplot f(x) [xmin xmax]",
+     "Interactive full-screen plot. Arrows=pan, +/-=zoom, a=auto-y, r=reset, q=exit.",
+     {"iplot sin(x)", "iplot sin(x) -10 10", "iplot x^3-x -2 2", NULL, NULL, NULL},
+     "plot, hplot, mandelbrot"},
+    
+    {"mandelbrot", FH_MANDELBROT, 0, 0, FF_CONST, "Commands", "mandelbrot",
+     "Interactive Mandelbrot set viewer. Arrows=pan, +/-=zoom, i/I=iterations, c=color, w/e/s=presets.",
+     {"mandelbrot", NULL, NULL, NULL, NULL, NULL},
+     "iplot, mandelbrot_iter, tscatter"},
+    
+    {"mandelbrot_iter", FH_MANDEL_ITER, 2, 3, FF_CONST, "Special", "mandelbrot_iter(x, y, [max_iter])",
+     "Returns iteration count for Mandelbrot escape. Default max_iter=100.",
+     {"mandelbrot_iter(0, 0, 100)", "mandelbrot_iter(-0.5, 0.5, 200)", NULL, NULL, NULL, NULL},
+     "mandelbrot"},
+    
+    {"tscatter", FH_TSCATTER, 0, 1, FF_CONST, "Commands", "tscatter [inner|outer|moon|all]",
+     "Interactive solar system viewer. Arrows=time/dt, +/-=zoom, space=play, 1/2/3=presets.",
+     {"tscatter", "tscatter inner", "tscatter moon", "planets outer", NULL, NULL},
+     "planet, mandelbrot"},
+    
+    {"planet", FH_PLANET, 1, 2, FF_CONST, "Special", "planet(\"name\", [t_days])",
+     "Returns planet position as complex x+iy (AU). Bodies: sun,mercury,venus,earth,mars,jupiter,saturn,uranus,neptune,moon.",
+     {"planet(\"earth\", 0)", "planet(\"mars\", 365)", "real(planet(\"venus\", 100))", NULL, NULL, NULL},
+     "tscatter"},
     
     {"hplot", FH_PLOT, 1, 3, FF_CONST, "Commands", "hplot f(x) [xmin xmax]",
      "Horizontal plot (wider aspect ratio).",

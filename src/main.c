@@ -219,6 +219,38 @@ int main(int argc, char *argv[])
             else print_help();
             continue;
         }
+        if (str_eq(input, "mandelbrot") || str_eq(input, "mandel")) {
+            extern int do_mandelbrot(void);
+            do_mandelbrot();
+            continue;
+        }
+        /* tscatter - interactive solar system viewer */
+        if (str_starts(input, "tscatter") || str_starts(input, "planets") || str_starts(input, "solar")) {
+            extern int do_tscatter(const char **bodies, int num_bodies, const char *follow);
+            static const char *inner[] = {"sun", "mercury", "venus", "earth", "mars"};
+            static const char *outer[] = {"sun", "jupiter", "saturn", "uranus", "neptune"};
+            static const char *all[] = {"sun", "mercury", "venus", "earth", "mars", "jupiter", "saturn"};
+            static const char *moon_view[] = {"earth", "moon"};
+            const char *arg = input;
+            
+            /* Skip command name */
+            while (*arg && *arg != ' ') arg++;
+            while (*arg == ' ') arg++;
+            
+            if (str_starts(arg, "inner")) {
+                do_tscatter(inner, 5, "sun");
+            } else if (str_starts(arg, "outer")) {
+                do_tscatter(outer, 5, "sun");
+            } else if (str_starts(arg, "moon")) {
+                do_tscatter(moon_view, 2, "earth,moon");
+            } else if (str_starts(arg, "all") || *arg == '\0') {
+                do_tscatter(all, 7, "sun");
+            } else {
+                /* Custom: parse body names */
+                do_tscatter(all, 7, "sun");
+            }
+            continue;
+        }
         if (str_starts(input, "demo ")) {
             const char *fn = input + 5;
             while (*fn == ' ') fn++;
@@ -1309,10 +1341,11 @@ int main(int argc, char *argv[])
          *           plot f(x) -5:5
          *           plot isprime(x) 0:100
          */
-        if (str_starts(input, "plot ") || str_starts(input, "textplot ")) {
+        if (str_starts(input, "plot ") || str_starts(input, "textplot ") || str_starts(input, "iplot ")) {
             int text_mode = str_starts(input, "textplot ");
+            int interactive_mode = str_starts(input, "iplot ");
             static char expr_buf[256];
-            char *p = input + (text_mode ? 9 : 5);
+            char *p = input + (text_mode ? 9 : (interactive_mode ? 6 : 5));
             char *range_start = NULL;
             int ei = 0;
             apf xmin, xmax;
@@ -1462,12 +1495,20 @@ int main(int argc, char *argv[])
 #ifdef HAVE_CONIO
             if (text_mode) {
                 do_textplot(expr_buf, 'x', &xmin, &xmax);
+            } else if (interactive_mode) {
+                extern int do_iplot(const char *expr, char var, apf *xmin, apf *xmax);
+                do_iplot(expr_buf, 'x', &xmin, &xmax);
             } else {
                 do_plot(expr_buf, 'x', &xmin, &xmax);
             }
 #else
-            /* On Linux, both plot and textplot use text mode */
-            do_plot(expr_buf, 'x', &xmin, &xmax);
+            /* On Linux/Unix */
+            if (interactive_mode) {
+                extern int do_iplot(const char *expr, char var, apf *xmin, apf *xmax);
+                do_iplot(expr_buf, 'x', &xmin, &xmax);
+            } else {
+                do_plot(expr_buf, 'x', &xmin, &xmax);
+            }
 #endif
             continue;
         }

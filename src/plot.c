@@ -2,6 +2,8 @@
  * C89 compliant for Watcom C / DOS
  * 100% soft-float APF-based - NO double or float types
  */
+#define _XOPEN_SOURCE 500  /* For usleep */
+#define _POSIX_C_SOURCE 200809L
 #include "sc.h"
 
 #ifdef HAVE_CONIO
@@ -1011,4 +1013,1439 @@ int do_parametric_text(const char *xfunc, const char *yfunc,
     printf("%7ld\n\n", apf_to_long(&xmax_a));
     
     return 1;
+}
+
+/* ========================================================================
+ * Interactive Plot (iplot) - Full-screen ANSI terminal plotting
+ * ======================================================================== */
+
+
+/* ========================================================================
+ * Interactive Plot (iplot) and Mandelbrot Viewer
+ * Full-screen ANSI terminal plotting with pan/zoom
+ * ======================================================================== */
+
+#if !defined(HAVE_CONIO) && !defined(_WIN32)
+/* Unix terminal handling */
+#include <termios.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include <signal.h>
+
+static struct termios iplot_orig_termios;
+static int iplot_term_setup = 0;
+
+static void iplot_restore_term(void)
+{
+    if (iplot_term_setup) {
+        tcsetattr(STDIN_FILENO, TCSAFLUSH, &iplot_orig_termios);
+        iplot_term_setup = 0;
+    }
+    /* Show cursor, exit alternate screen */
+    printf("\033[?25h\033[?1049l");
+    fflush(stdout);
+}
+
+static void iplot_setup_term(void)
+{
+    struct termios raw;
+    
+    if (!isatty(STDIN_FILENO)) return;
+    
+    tcgetattr(STDIN_FILENO, &iplot_orig_termios);
+    raw = iplot_orig_termios;
+    raw.c_lflag &= ~(ECHO | ICANON);
+    raw.c_cc[VMIN] = 1;
+    raw.c_cc[VTIME] = 0;
+    tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+    iplot_term_setup = 1;
+    
+    /* Enter alternate screen, hide cursor */
+    printf("\033[?1049h\033[?25l");
+    fflush(stdout);
+}
+
+static void iplot_get_terminal_size(int *width, int *height)
+{
+    struct winsize w;
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &w) == 0) {
+        *width = w.ws_col;
+        *height = w.ws_row;
+    } else {
+        *width = 80;
+        *height = 24;
+    }
+}
+
+static int iplot_read_key(void)
+{
+    unsigned char c;
+    if (read(STDIN_FILENO, &c, 1) != 1) return -1;
+    
+    if (c == 27) {  /* Escape sequence */
+        unsigned char seq[3];
+        if (read(STDIN_FILENO, &seq[0], 1) != 1) return 27;  /* Just ESC */
+        if (seq[0] != '[') return 27;
+        if (read(STDIN_FILENO, &seq[1], 1) != 1) return 27;
+        
+        switch (seq[1]) {
+            case 'A': return 1001;  /* Up */
+            case 'B': return 1002;  /* Down */
+            case 'C': return 1003;  /* Right */
+            case 'D': return 1004;  /* Left */
+        }
+        return 27;
+    }
+    return c;
+}
+
+int do_iplot(const char *expr, char var, apf *xmin_init, apf *xmax_init)
+{
+    int width, height;
+    int plot_width, plot_height;
+    int x, y, i;
+    apf xmin, xmax, ymin, ymax;
+    apf ymin_fixed, ymax_fixed;  /* User-controlled y range */
+    apf x_range, y_range, x_step;
+    apf *y_values;
+    int *valid;
+    char *screen;
+    int running = 1;
+    int need_redraw = 1;
+    int func_idx;
+    int use_expr = 0;
+    int auto_y = 1;  /* Auto-scale y axis */
+    const int label_width = 8;  /* Fixed width for Y axis labels */
+    
+    /* Check function */
+    func_idx = get_func_index(expr);
+    if (func_idx < 0 || !user_funcs[func_idx].defined) {
+        use_expr = 1;
+    }
+    
+    /* Copy initial range - default to -10:10 if not specified */
+    if (apf_eq(xmin_init, xmax_init)) {
+        apf_from_int(&xmin, -10);
+        apf_from_int(&xmax, 10);
+    } else {
+        apf_copy(&xmin, xmin_init);
+        apf_copy(&xmax, xmax_init);
+    }
+    
+    /* Default y range (will be auto-scaled initially) */
+    apf_from_int(&ymin_fixed, -10);
+    apf_from_int(&ymax_fixed, 10);
+    
+    /* Setup terminal */
+    iplot_setup_term();
+    iplot_get_terminal_size(&width, &height);
+    
+    /* Reserve space for axes labels (label_width + 1 for border) */
+    plot_width = width - label_width - 2;
+    plot_height = height - 4;
+    
+    /* Adjust for character aspect ratio: chars are ~2x tall as wide
+     * So we need to scale x by 0.5 (or equivalently, use half the width for same visual range)
+     * This is handled by making the x_range effectively cover more "visual" space */
+    
+    if (plot_width < 20 || plot_height < 10) {
+        iplot_restore_term();
+        printf("Terminal too small for iplot\n");
+        return 0;
+    }
+    
+    /* Allocate buffers */
+    y_values = (apf *)malloc(plot_width * sizeof(apf));
+    valid = (int *)malloc(plot_width * sizeof(int));
+    screen = (char *)malloc(plot_width * plot_height);
+    
+    if (!y_values || !valid || !screen) {
+        iplot_restore_term();
+        printf("Out of memory\n");
+        free(y_values); free(valid); free(screen);
+        return 0;
+    }
+    
+    while (running) {
+        if (need_redraw) {
+            int axis_x = -1, axis_y = -1;
+            int first_valid = 1;
+            apf temp, idx_apf;
+            apf auto_ymin, auto_ymax;
+            
+            /* Calculate x step - scale for aspect ratio (chars ~2x tall as wide) */
+            apf_sub(&x_range, &xmax, &xmin);
+            apf_from_int(&temp, plot_width - 1);
+            apf_div(&x_step, &x_range, &temp);
+            
+            /* Evaluate function at each x */
+            for (x = 0; x < plot_width; x++) {
+                apf x_val;
+                apfc arg, result;
+                int eval_ok;
+                
+                apf_from_int(&idx_apf, x);
+                apf_mul(&temp, &idx_apf, &x_step);
+                apf_add(&x_val, &xmin, &temp);
+                
+                apf_copy(&arg.re, &x_val);
+                apf_zero(&arg.im);
+                
+                if (use_expr) {
+                    eval_ok = eval_expr_with_var(&result, expr, var, &arg);
+                } else {
+                    eval_ok = eval_user_func(&result, func_idx, &arg);
+                }
+                
+                if (eval_ok && !apf_isnan(&result.re) && !apf_isinf(&result.re) &&
+                    apf_iszero(&result.im)) {
+                    valid[x] = 1;
+                    apf_copy(&y_values[x], &result.re);
+                    
+                    if (first_valid) {
+                        apf_copy(&auto_ymin, &result.re);
+                        apf_copy(&auto_ymax, &result.re);
+                        first_valid = 0;
+                    } else {
+                        if (apf_cmp(&result.re, &auto_ymin) < 0) apf_copy(&auto_ymin, &result.re);
+                        if (apf_cmp(&result.re, &auto_ymax) > 0) apf_copy(&auto_ymax, &result.re);
+                    }
+                } else {
+                    valid[x] = 0;
+                }
+            }
+            
+            /* Determine y range */
+            if (auto_y) {
+                if (first_valid) {
+                    apf_from_int(&ymin, -1);
+                    apf_from_int(&ymax, 1);
+                } else {
+                    apf_copy(&ymin, &auto_ymin);
+                    apf_copy(&ymax, &auto_ymax);
+                }
+                
+                /* Add 5% margin to y */
+                apf_sub(&y_range, &ymax, &ymin);
+                if (apf_iszero(&y_range)) apf_from_int(&y_range, 2);
+                {
+                    apf margin, twenty;
+                    apf_from_int(&twenty, 20);
+                    apf_div(&margin, &y_range, &twenty);
+                    apf_sub(&ymin, &ymin, &margin);
+                    apf_add(&ymax, &ymax, &margin);
+                }
+            } else {
+                apf_copy(&ymin, &ymin_fixed);
+                apf_copy(&ymax, &ymax_fixed);
+            }
+            
+            apf_sub(&y_range, &ymax, &ymin);
+            
+            /* Find axis positions */
+            {
+                apf zero_apf, norm;
+                apf_zero(&zero_apf);
+                
+                if (apf_cmp(&ymin, &zero_apf) <= 0 && apf_cmp(&ymax, &zero_apf) >= 0) {
+                    apf_sub(&temp, &zero_apf, &ymin);
+                    apf_div(&norm, &temp, &y_range);
+                    apf_from_int(&temp, plot_height - 1);
+                    apf_mul(&norm, &norm, &temp);
+                    axis_y = (plot_height - 1) - (int)apf_to_long(&norm);
+                }
+                
+                if (apf_cmp(&xmin, &zero_apf) <= 0 && apf_cmp(&xmax, &zero_apf) >= 0) {
+                    apf_sub(&temp, &zero_apf, &xmin);
+                    apf_div(&norm, &temp, &x_range);
+                    apf_from_int(&temp, plot_width - 1);
+                    apf_mul(&norm, &norm, &temp);
+                    axis_x = (int)apf_to_long(&norm);
+                }
+            }
+            
+            /* Clear screen buffer */
+            memset(screen, ' ', plot_width * plot_height);
+            
+            /* Draw axes */
+            if (axis_y >= 0 && axis_y < plot_height) {
+                for (x = 0; x < plot_width; x++) {
+                    screen[axis_y * plot_width + x] = '-';
+                }
+            }
+            if (axis_x >= 0 && axis_x < plot_width) {
+                for (y = 0; y < plot_height; y++) {
+                    char c = screen[y * plot_width + axis_x];
+                    screen[y * plot_width + axis_x] = (c == '-') ? '+' : '|';
+                }
+            }
+            
+            /* Plot points */
+            for (x = 0; x < plot_width; x++) {
+                if (valid[x]) {
+                    apf norm;
+                    int py;
+                    
+                    apf_sub(&temp, &y_values[x], &ymin);
+                    apf_div(&norm, &temp, &y_range);
+                    apf_from_int(&temp, plot_height - 1);
+                    apf_mul(&norm, &norm, &temp);
+                    py = (plot_height - 1) - (int)apf_to_long(&norm);
+                    
+                    if (py >= 0 && py < plot_height) {
+                        screen[py * plot_width + x] = '*';
+                    }
+                }
+            }
+            
+            /* Render to terminal */
+            printf("\033[H\033[2J");  /* Clear screen, home cursor */
+            
+            /* Title */
+            printf("\033[1;36m iplot: \033[1;33m%s\033[0m", expr);
+            printf("  \033[90m[arrows=pan +/-=zoom a=auto-y r=reset q=quit]\033[0m\n");
+            
+            /* Top border with y-max */
+            {
+                double ymax_d = apf_to_double(&ymax);
+                printf("\033[33m%7.2g\033[0m \033[90m+", ymax_d);
+                for (x = 0; x < plot_width; x++) printf("-");
+                printf("+\033[0m\n");
+            }
+            
+            /* Plot area */
+            for (y = 0; y < plot_height; y++) {
+                if (y == plot_height / 2) {
+                    double ymid = apf_to_double(&ymin) + apf_to_double(&y_range) / 2;
+                    printf("\033[33m%7.2g\033[0m \033[90m|\033[0m", ymid);
+                } else {
+                    printf("        \033[90m|\033[0m");
+                }
+                
+                for (x = 0; x < plot_width; x++) {
+                    char c = screen[y * plot_width + x];
+                    if (c == '*') {
+                        printf("\033[1;32m*\033[0m");
+                    } else if (c == '-' || c == '|' || c == '+') {
+                        printf("\033[90m%c\033[0m", c);
+                    } else {
+                        putchar(c);
+                    }
+                }
+                printf("\033[90m|\033[0m\n");
+            }
+            
+            /* Bottom border with y-min */
+            {
+                double ymin_d = apf_to_double(&ymin);
+                printf("\033[33m%7.2g\033[0m \033[90m+", ymin_d);
+                for (x = 0; x < plot_width; x++) printf("-");
+                printf("+\033[0m\n");
+            }
+            
+            /* X axis labels - compact */
+            {
+                double xmin_d = apf_to_double(&xmin);
+                double xmax_d = apf_to_double(&xmax);
+                double xmid = (xmin_d + xmax_d) / 2;
+                int label_space = (plot_width - 21) / 2;  /* Space between labels */
+                printf("        \033[33m%-7.2g", xmin_d);
+                for (i = 0; i < label_space; i++) printf(" ");
+                printf("%7.2g", xmid);
+                for (i = 0; i < label_space; i++) printf(" ");
+                printf("%7.2g\033[0m\n", xmax_d);
+            }
+            
+            fflush(stdout);
+            need_redraw = 0;
+        }
+        
+        /* Read key */
+        {
+            int key = iplot_read_key();
+            apf shift, temp_key;
+            
+            switch (key) {
+                case 'q':
+                case 'Q':
+                case 27:   /* ESC */
+                    running = 0;
+                    break;
+                    
+                case 1004:  /* Left - pan left */
+                    apf_sub(&x_range, &xmax, &xmin);
+                    apf_from_int(&temp_key, 20);
+                    apf_div(&shift, &x_range, &temp_key);
+                    apf_sub(&xmin, &xmin, &shift);
+                    apf_sub(&xmax, &xmax, &shift);
+                    need_redraw = 1;
+                    break;
+                    
+                case 1003:  /* Right - pan right */
+                    apf_sub(&x_range, &xmax, &xmin);
+                    apf_from_int(&temp_key, 20);
+                    apf_div(&shift, &x_range, &temp_key);
+                    apf_add(&xmin, &xmin, &shift);
+                    apf_add(&xmax, &xmax, &shift);
+                    need_redraw = 1;
+                    break;
+                    
+                case 1001:  /* Up - pan up (increase y) */
+                    if (auto_y) {
+                        /* Switch to fixed y mode based on current view */
+                        apf_copy(&ymin_fixed, &ymin);
+                        apf_copy(&ymax_fixed, &ymax);
+                        auto_y = 0;
+                    }
+                    apf_sub(&y_range, &ymax_fixed, &ymin_fixed);
+                    apf_from_int(&temp_key, 20);
+                    apf_div(&shift, &y_range, &temp_key);
+                    apf_add(&ymin_fixed, &ymin_fixed, &shift);
+                    apf_add(&ymax_fixed, &ymax_fixed, &shift);
+                    need_redraw = 1;
+                    break;
+                    
+                case 1002:  /* Down - pan down (decrease y) */
+                    if (auto_y) {
+                        apf_copy(&ymin_fixed, &ymin);
+                        apf_copy(&ymax_fixed, &ymax);
+                        auto_y = 0;
+                    }
+                    apf_sub(&y_range, &ymax_fixed, &ymin_fixed);
+                    apf_from_int(&temp_key, 20);
+                    apf_div(&shift, &y_range, &temp_key);
+                    apf_sub(&ymin_fixed, &ymin_fixed, &shift);
+                    apf_sub(&ymax_fixed, &ymax_fixed, &shift);
+                    need_redraw = 1;
+                    break;
+                    
+                case '+':
+                case '=':  /* Zoom in */
+                    apf_sub(&x_range, &xmax, &xmin);
+                    apf_from_int(&temp_key, 20);
+                    apf_div(&shift, &x_range, &temp_key);
+                    apf_add(&xmin, &xmin, &shift);
+                    apf_sub(&xmax, &xmax, &shift);
+                    if (!auto_y) {
+                        apf_sub(&y_range, &ymax_fixed, &ymin_fixed);
+                        apf_div(&shift, &y_range, &temp_key);
+                        apf_add(&ymin_fixed, &ymin_fixed, &shift);
+                        apf_sub(&ymax_fixed, &ymax_fixed, &shift);
+                    }
+                    need_redraw = 1;
+                    break;
+                    
+                case '-':
+                case '_':  /* Zoom out */
+                    apf_sub(&x_range, &xmax, &xmin);
+                    apf_from_int(&temp_key, 18);
+                    apf_div(&shift, &x_range, &temp_key);
+                    apf_sub(&xmin, &xmin, &shift);
+                    apf_add(&xmax, &xmax, &shift);
+                    if (!auto_y) {
+                        apf_sub(&y_range, &ymax_fixed, &ymin_fixed);
+                        apf_div(&shift, &y_range, &temp_key);
+                        apf_sub(&ymin_fixed, &ymin_fixed, &shift);
+                        apf_add(&ymax_fixed, &ymax_fixed, &shift);
+                    }
+                    need_redraw = 1;
+                    break;
+                    
+                case 'a':
+                case 'A':  /* Toggle auto-y */
+                    auto_y = !auto_y;
+                    need_redraw = 1;
+                    break;
+                    
+                case 'r':
+                case 'R':  /* Reset */
+                    if (apf_eq(xmin_init, xmax_init)) {
+                        apf_from_int(&xmin, -10);
+                        apf_from_int(&xmax, 10);
+                    } else {
+                        apf_copy(&xmin, xmin_init);
+                        apf_copy(&xmax, xmax_init);
+                    }
+                    auto_y = 1;
+                    need_redraw = 1;
+                    break;
+            }
+        }
+    }
+    
+    /* Cleanup */
+    free(y_values);
+    free(valid);
+    free(screen);
+    iplot_restore_term();
+    
+    return 1;
+}
+
+/* ========================================================================
+ * Interactive Mandelbrot Viewer
+ * ======================================================================== */
+
+/* ANSI color palette for Mandelbrot - 256 color mode */
+static const char *mandel_colors[] = {
+    "\033[38;5;17m",   /* Deep blue */
+    "\033[38;5;18m",
+    "\033[38;5;19m",
+    "\033[38;5;20m",
+    "\033[38;5;21m",
+    "\033[38;5;27m",
+    "\033[38;5;33m",
+    "\033[38;5;39m",
+    "\033[38;5;45m",
+    "\033[38;5;51m",   /* Cyan */
+    "\033[38;5;50m",
+    "\033[38;5;49m",
+    "\033[38;5;48m",
+    "\033[38;5;47m",
+    "\033[38;5;46m",   /* Green */
+    "\033[38;5;82m",
+    "\033[38;5;118m",
+    "\033[38;5;154m",
+    "\033[38;5;190m",
+    "\033[38;5;226m",  /* Yellow */
+    "\033[38;5;220m",
+    "\033[38;5;214m",
+    "\033[38;5;208m",
+    "\033[38;5;202m",
+    "\033[38;5;196m",  /* Red */
+    "\033[38;5;197m",
+    "\033[38;5;198m",
+    "\033[38;5;199m",
+    "\033[38;5;200m",
+    "\033[38;5;201m",  /* Magenta */
+    "\033[38;5;165m",
+    "\033[38;5;129m",
+};
+#define MANDEL_NUM_COLORS 32
+
+/* Characters for density */
+static const char mandel_chars[] = " .:-=+*#%@";
+#define MANDEL_NUM_CHARS 10
+
+static int mandelbrot_iter(double cx, double cy, int max_iter)
+{
+    double zx = 0, zy = 0;
+    double zx2, zy2;
+    int iter;
+    
+    for (iter = 0; iter < max_iter; iter++) {
+        zx2 = zx * zx;
+        zy2 = zy * zy;
+        if (zx2 + zy2 > 4.0) return iter;
+        zy = 2 * zx * zy + cy;
+        zx = zx2 - zy2 + cx;
+    }
+    return max_iter;
+}
+
+int do_mandelbrot(void)
+{
+    int width, height;
+    int plot_width, plot_height;
+    double xmin = -2.5, xmax = 1.0, ymin, ymax;
+    int max_iter = 100;
+    int running = 1;
+    int need_redraw = 1;
+    int x, y;
+    int *iter_buf;
+    int color_mode = 1;  /* 0 = ASCII, 1 = color */
+    double aspect_ratio = 0.5;  /* Chars are ~2x tall as wide */
+    
+    /* Setup terminal */
+    iplot_setup_term();
+    iplot_get_terminal_size(&width, &height);
+    
+    plot_width = width;
+    plot_height = height - 2;  /* Leave room for status line */
+    
+    /* Calculate y range to maintain aspect ratio */
+    {
+        double x_range = xmax - xmin;
+        double y_range = x_range * plot_height / (plot_width * aspect_ratio);
+        double y_center = 0.0;  /* Mandelbrot is roughly centered at y=0 */
+        ymin = y_center - y_range / 2;
+        ymax = y_center + y_range / 2;
+    }
+    
+    if (plot_width < 40 || plot_height < 20) {
+        iplot_restore_term();
+        printf("Terminal too small for mandelbrot\n");
+        return 0;
+    }
+    
+    iter_buf = (int *)malloc(plot_width * plot_height * sizeof(int));
+    if (!iter_buf) {
+        iplot_restore_term();
+        printf("Out of memory\n");
+        return 0;
+    }
+    
+    while (running) {
+        if (need_redraw) {
+            double dx = (xmax - xmin) / plot_width;
+            double dy = (ymax - ymin) / plot_height;
+            int max_found = 0;
+            
+            /* Calculate all iterations */
+            for (y = 0; y < plot_height; y++) {
+                double cy = ymax - y * dy;
+                for (x = 0; x < plot_width; x++) {
+                    double cx = xmin + x * dx;
+                    int iter = mandelbrot_iter(cx, cy, max_iter);
+                    iter_buf[y * plot_width + x] = iter;
+                    if (iter < max_iter && iter > max_found) max_found = iter;
+                }
+            }
+            
+            /* Render */
+            printf("\033[H");  /* Home cursor */
+            
+            for (y = 0; y < plot_height; y++) {
+                for (x = 0; x < plot_width; x++) {
+                    int iter = iter_buf[y * plot_width + x];
+                    
+                    if (iter == max_iter) {
+                        /* In set - black */
+                        if (color_mode) {
+                            printf("\033[38;5;0m ");
+                        } else {
+                            putchar(' ');
+                        }
+                    } else {
+                        if (color_mode) {
+                            int ci = (iter * MANDEL_NUM_COLORS / (max_found + 1)) % MANDEL_NUM_COLORS;
+                            printf("%s#", mandel_colors[ci]);
+                        } else {
+                            int ci = (iter * MANDEL_NUM_CHARS / (max_found + 1)) % MANDEL_NUM_CHARS;
+                            putchar(mandel_chars[ci]);
+                        }
+                    }
+                }
+                if (y < plot_height - 1) putchar('\n');
+            }
+            
+            /* Status line */
+            printf("\033[0m\n");
+            printf("\033[K\033[1;36mMandelbrot\033[0m x:[%.6f,%.6f] y:[%.6f,%.6f] iter:%d  ", 
+                   xmin, xmax, ymin, ymax, max_iter);
+            printf("\033[90m[arrows=pan +/-=zoom i/I=iter c=color r=reset q=quit]\033[0m");
+            fflush(stdout);
+            
+            need_redraw = 0;
+        }
+        
+        /* Read key */
+        {
+            int key = iplot_read_key();
+            double xrange = xmax - xmin;
+            double yrange = ymax - ymin;
+            double shift;
+            
+            switch (key) {
+                case 'q':
+                case 'Q':
+                case 27:
+                    running = 0;
+                    break;
+                    
+                case 1004:  /* Left */
+                    shift = xrange * 0.1;
+                    xmin -= shift;
+                    xmax -= shift;
+                    need_redraw = 1;
+                    break;
+                    
+                case 1003:  /* Right */
+                    shift = xrange * 0.1;
+                    xmin += shift;
+                    xmax += shift;
+                    need_redraw = 1;
+                    break;
+                    
+                case 1001:  /* Up */
+                    shift = yrange * 0.1;
+                    ymin += shift;
+                    ymax += shift;
+                    need_redraw = 1;
+                    break;
+                    
+                case 1002:  /* Down */
+                    shift = yrange * 0.1;
+                    ymin -= shift;
+                    ymax -= shift;
+                    need_redraw = 1;
+                    break;
+                    
+                case '+':
+                case '=':  /* Zoom in */
+                    {
+                        double cx = (xmin + xmax) / 2;
+                        double cy = (ymin + ymax) / 2;
+                        xrange *= 0.8;
+                        yrange *= 0.8;
+                        xmin = cx - xrange / 2;
+                        xmax = cx + xrange / 2;
+                        ymin = cy - yrange / 2;
+                        ymax = cy + yrange / 2;
+                        /* Increase iterations when zooming in */
+                        if (max_iter < 1000) max_iter = (int)(max_iter * 1.1);
+                    }
+                    need_redraw = 1;
+                    break;
+                    
+                case '-':
+                case '_':  /* Zoom out */
+                    {
+                        double cx = (xmin + xmax) / 2;
+                        double cy = (ymin + ymax) / 2;
+                        xrange *= 1.25;
+                        yrange *= 1.25;
+                        xmin = cx - xrange / 2;
+                        xmax = cx + xrange / 2;
+                        ymin = cy - yrange / 2;
+                        ymax = cy + yrange / 2;
+                        if (max_iter > 50) max_iter = (int)(max_iter * 0.9);
+                    }
+                    need_redraw = 1;
+                    break;
+                    
+                case 'i':  /* Decrease iterations */
+                    if (max_iter > 20) max_iter -= 10;
+                    need_redraw = 1;
+                    break;
+                    
+                case 'I':  /* Increase iterations */
+                    if (max_iter < 2000) max_iter += 10;
+                    need_redraw = 1;
+                    break;
+                    
+                case 'c':
+                case 'C':  /* Toggle color mode */
+                    color_mode = !color_mode;
+                    need_redraw = 1;
+                    break;
+                    
+                case 'r':
+                case 'R':  /* Reset */
+                    xmin = -2.5; xmax = 1.0;
+                    {
+                        double x_range = xmax - xmin;
+                        double y_range = x_range * plot_height / (plot_width * aspect_ratio);
+                        ymin = -y_range / 2;
+                        ymax = y_range / 2;
+                    }
+                    max_iter = 100;
+                    need_redraw = 1;
+                    break;
+                    
+                case 'w':  /* Zoom to specific area - cardioid */
+                    {
+                        double cx = -0.75, cy = 0.15;
+                        double x_range = 0.1;
+                        double y_range = x_range * plot_height / (plot_width * aspect_ratio);
+                        xmin = cx - x_range / 2; xmax = cx + x_range / 2;
+                        ymin = cy - y_range / 2; ymax = cy + y_range / 2;
+                    }
+                    max_iter = 200;
+                    need_redraw = 1;
+                    break;
+                    
+                case 'e':  /* Elephant valley */
+                    {
+                        double cx = 0.27, cy = 0.01;
+                        double x_range = 0.02;
+                        double y_range = x_range * plot_height / (plot_width * aspect_ratio);
+                        xmin = cx - x_range / 2; xmax = cx + x_range / 2;
+                        ymin = cy - y_range / 2; ymax = cy + y_range / 2;
+                    }
+                    max_iter = 300;
+                    need_redraw = 1;
+                    break;
+                    
+                case 's':  /* Seahorse valley */
+                    {
+                        double cx = -0.745, cy = 0.105;
+                        double x_range = 0.01;
+                        double y_range = x_range * plot_height / (plot_width * aspect_ratio);
+                        xmin = cx - x_range / 2; xmax = cx + x_range / 2;
+                        ymin = cy - y_range / 2; ymax = cy + y_range / 2;
+                    }
+                    max_iter = 300;
+                    need_redraw = 1;
+                    break;
+            }
+        }
+    }
+    
+    free(iter_buf);
+    iplot_restore_term();
+    
+    return 1;
+}
+
+/* Mandelbrot iteration function callable from calculator */
+void fn_mandelbrot_iter(apfc *result, const apfc *cx, const apfc *cy, const apfc *max_iter_apf)
+{
+    double x = apf_to_double(&cx->re);
+    double y = apf_to_double(&cy->re);
+    int max_iter = (int)apf_to_double(&max_iter_apf->re);
+    int iter;
+    
+    if (max_iter < 1) max_iter = 100;
+    if (max_iter > 10000) max_iter = 10000;
+    
+    iter = mandelbrot_iter(x, y, max_iter);
+    
+    apf_from_int(&result->re, iter);
+    apf_zero(&result->im);
+}
+
+#elif defined(_WIN32)
+/* Windows stubs */
+int do_iplot(const char *expr, char var, apf *xmin_init, apf *xmax_init)
+{
+    (void)expr; (void)var; (void)xmin_init; (void)xmax_init;
+    printf("iplot not implemented on Windows yet - use plot instead\n");
+    return 0;
+}
+
+int do_mandelbrot(void)
+{
+    printf("mandelbrot viewer not implemented on Windows yet\n");
+    return 0;
+}
+
+void fn_mandelbrot_iter(apfc *result, const apfc *cx, const apfc *cy, const apfc *max_iter_apf)
+{
+    (void)cx; (void)cy; (void)max_iter_apf;
+    apf_zero(&result->re);
+    apf_zero(&result->im);
+}
+
+#else
+/* Stubs for DOS/other */
+int do_iplot(const char *expr, char var, apf *xmin_init, apf *xmax_init)
+{
+    (void)expr; (void)var; (void)xmin_init; (void)xmax_init;
+    printf("iplot requires Unix terminal\n");
+    return 0;
+}
+
+int do_mandelbrot(void)
+{
+    printf("mandelbrot viewer requires Unix terminal\n");
+    return 0;
+}
+
+void fn_mandelbrot_iter(apfc *result, const apfc *cx, const apfc *cy, const apfc *max_iter_apf)
+{
+    (void)cx; (void)cy; (void)max_iter_apf;
+    apf_zero(&result->re);
+    apf_zero(&result->im);
+}
+#endif
+
+/* ========================================================================
+ * Planet Ephemeris - Simple circular orbit model
+ * ======================================================================== */
+
+#include <math.h>
+#include <strings.h>  /* For strcasecmp */
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+typedef struct {
+    const char *name;
+    double a;        /* Semi-major axis in AU */
+    double period;   /* Orbital period in days */
+    double phase;    /* Phase at t=0 in radians */
+} planet_t;
+
+static const planet_t planets[] = {
+    {"sun",      0.0,      1.0,       0.0},
+    {"mercury",  0.3871,   87.969,    1.0},
+    {"venus",    0.7233,   224.701,   2.2},
+    {"earth",    1.0000,   365.256,   0.2},
+    {"mars",     1.5237,   686.980,   3.1},
+    {"jupiter",  5.2028,   4332.59,   0.7},
+    {"saturn",   9.5388,   10759.22,  2.9},
+    {"uranus",   19.191,   30685.4,   1.7},
+    {"neptune",  30.068,   60189.0,   0.4},
+    {"moon",     0.00257,  27.321661, 0.0},  /* Special: orbits Earth */
+    {NULL, 0, 0, 0}
+};
+
+static const planet_t *find_planet(const char *name)
+{
+    int i;
+    for (i = 0; planets[i].name; i++) {
+        if (strcasecmp(planets[i].name, name) == 0) {
+            return &planets[i];
+        }
+    }
+    return NULL;
+}
+
+/* Get planet position at time t (days). Returns heliocentric coords in AU. */
+static void planet_pos(const char *name, double t_days, double *x, double *y)
+{
+    const planet_t *p = find_planet(name);
+    double theta;
+    
+    if (!p) {
+        *x = *y = 0;
+        return;
+    }
+    
+    if (strcmp(name, "sun") == 0) {
+        *x = *y = 0;
+        return;
+    }
+    
+    if (strcmp(name, "moon") == 0) {
+        /* Moon orbits Earth */
+        double ex, ey;
+        planet_pos("earth", t_days, &ex, &ey);
+        theta = 2 * M_PI * (t_days / p->period) + p->phase;
+        *x = ex + p->a * cos(theta);
+        *y = ey + p->a * sin(theta);
+        return;
+    }
+    
+    theta = 2 * M_PI * (t_days / p->period) + p->phase;
+    *x = p->a * cos(theta);
+    *y = p->a * sin(theta);
+}
+
+/* Calculator function: planet(name, t_days) returns [x, y] */
+void fn_planet_pos(apfc *result_x, apfc *result_y, const char *name, double t_days)
+{
+    double x, y;
+    planet_pos(name, t_days, &x, &y);
+    apf_from_double(&result_x->re, x);
+    apf_zero(&result_x->im);
+    apf_from_double(&result_y->re, y);
+    apf_zero(&result_y->im);
+}
+
+#if !defined(HAVE_CONIO) && !defined(_WIN32)
+
+/* ========================================================================
+ * Interactive Scatter Plot (iscatter)
+ * ======================================================================== */
+
+/* Density characters for ASCII mode */
+static const char density_chars[] = " .'`^\",:;Il!i><~+_-?][}{1)(|/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$";
+#define NUM_DENSITY_CHARS 70
+
+int do_iscatter(double *xs, double *ys, int *iters, int n, int max_iter)
+{
+    int width, height;
+    int plot_width, plot_height;
+    double xmin, xmax, ymin, ymax;
+    int running = 1;
+    int need_redraw = 1;
+    int x, y, i;
+    int *screen_iter;  /* Iteration count per cell */
+    int *screen_count; /* Point count per cell */
+    int color_mode = 1;
+    
+    /* Find bounds */
+    xmin = xmax = xs[0];
+    ymin = ymax = ys[0];
+    for (i = 1; i < n; i++) {
+        if (xs[i] < xmin) xmin = xs[i];
+        if (xs[i] > xmax) xmax = xs[i];
+        if (ys[i] < ymin) ymin = ys[i];
+        if (ys[i] > ymax) ymax = ys[i];
+    }
+    
+    /* Add margin */
+    {
+        double mx = (xmax - xmin) * 0.05;
+        double my = (ymax - ymin) * 0.05;
+        if (mx < 0.001) mx = 0.1;
+        if (my < 0.001) my = 0.1;
+        xmin -= mx; xmax += mx;
+        ymin -= my; ymax += my;
+    }
+    
+    iplot_setup_term();
+    iplot_get_terminal_size(&width, &height);
+    
+    plot_width = width;
+    plot_height = height - 2;
+    
+    screen_iter = (int *)malloc(plot_width * plot_height * sizeof(int));
+    screen_count = (int *)malloc(plot_width * plot_height * sizeof(int));
+    
+    if (!screen_iter || !screen_count) {
+        iplot_restore_term();
+        free(screen_iter); free(screen_count);
+        return 0;
+    }
+    
+    while (running) {
+        if (need_redraw) {
+            double dx = (xmax - xmin) / plot_width;
+            double dy = (ymax - ymin) / plot_height;
+            
+            memset(screen_iter, 0, plot_width * plot_height * sizeof(int));
+            memset(screen_count, 0, plot_width * plot_height * sizeof(int));
+            
+            /* Bin points */
+            for (i = 0; i < n; i++) {
+                int px = (int)((xs[i] - xmin) / dx);
+                int py = (int)((ymax - ys[i]) / dy);
+                if (px >= 0 && px < plot_width && py >= 0 && py < plot_height) {
+                    int idx = py * plot_width + px;
+                    screen_iter[idx] += iters[i];
+                    screen_count[idx]++;
+                }
+            }
+            
+            /* Render */
+            printf("\033[H");
+            
+            for (y = 0; y < plot_height; y++) {
+                for (x = 0; x < plot_width; x++) {
+                    int idx = y * plot_width + x;
+                    int count = screen_count[idx];
+                    
+                    if (count == 0) {
+                        putchar(' ');
+                    } else {
+                        int avg_iter = screen_iter[idx] / count;
+                        
+                        if (color_mode) {
+                            int ci = (avg_iter * MANDEL_NUM_COLORS / max_iter) % MANDEL_NUM_COLORS;
+                            if (avg_iter >= max_iter) {
+                                printf("\033[38;5;0m ");
+                            } else {
+                                printf("%s#", mandel_colors[ci]);
+                            }
+                        } else {
+                            int di = (avg_iter * NUM_DENSITY_CHARS / max_iter);
+                            if (di >= NUM_DENSITY_CHARS) di = NUM_DENSITY_CHARS - 1;
+                            putchar(density_chars[di]);
+                        }
+                    }
+                }
+                if (y < plot_height - 1) putchar('\n');
+            }
+            
+            printf("\033[0m\n");
+            printf("\033[K\033[1;36miscatter\033[0m n=%d x:[%.4g,%.4g] y:[%.4g,%.4g]  ",
+                   n, xmin, xmax, ymin, ymax);
+            printf("\033[90m[arrows=pan +/-=zoom c=color q=quit]\033[0m");
+            fflush(stdout);
+            
+            need_redraw = 0;
+        }
+        
+        {
+            int key = iplot_read_key();
+            double xrange = xmax - xmin;
+            double yrange = ymax - ymin;
+            double shift;
+            
+            switch (key) {
+                case 'q': case 'Q': case 27:
+                    running = 0;
+                    break;
+                case 1004:  /* Left */
+                    shift = xrange * 0.1;
+                    xmin -= shift; xmax -= shift;
+                    need_redraw = 1;
+                    break;
+                case 1003:  /* Right */
+                    shift = xrange * 0.1;
+                    xmin += shift; xmax += shift;
+                    need_redraw = 1;
+                    break;
+                case 1001:  /* Up */
+                    shift = yrange * 0.1;
+                    ymin += shift; ymax += shift;
+                    need_redraw = 1;
+                    break;
+                case 1002:  /* Down */
+                    shift = yrange * 0.1;
+                    ymin -= shift; ymax -= shift;
+                    need_redraw = 1;
+                    break;
+                case '+': case '=':
+                    {
+                        double cx = (xmin + xmax) / 2;
+                        double cy = (ymin + ymax) / 2;
+                        xrange *= 0.8; yrange *= 0.8;
+                        xmin = cx - xrange/2; xmax = cx + xrange/2;
+                        ymin = cy - yrange/2; ymax = cy + yrange/2;
+                    }
+                    need_redraw = 1;
+                    break;
+                case '-': case '_':
+                    {
+                        double cx = (xmin + xmax) / 2;
+                        double cy = (ymin + ymax) / 2;
+                        xrange *= 1.25; yrange *= 1.25;
+                        xmin = cx - xrange/2; xmax = cx + xrange/2;
+                        ymin = cy - yrange/2; ymax = cy + yrange/2;
+                    }
+                    need_redraw = 1;
+                    break;
+                case 'c': case 'C':
+                    color_mode = !color_mode;
+                    need_redraw = 1;
+                    break;
+            }
+        }
+    }
+    
+    free(screen_iter);
+    free(screen_count);
+    iplot_restore_term();
+    return 1;
+}
+
+/* ========================================================================
+ * Interactive Time Scatter - Solar System Viewer (tscatter)
+ * ======================================================================== */
+
+#include <sys/select.h>
+#include <unistd.h>
+
+/* Planet display info */
+typedef struct {
+    const char *name;
+    char symbol;
+    const char *color;
+} planet_display_t;
+
+static const planet_display_t planet_displays[] = {
+    {"sun",     'O', "\033[1;33m"},     /* Yellow */
+    {"mercury", '.', "\033[38;5;250m"}, /* Gray */
+    {"venus",   'v', "\033[38;5;229m"}, /* Pale yellow */
+    {"earth",   'e', "\033[1;34m"},     /* Blue */
+    {"mars",    'm', "\033[1;31m"},     /* Red */
+    {"jupiter", 'J', "\033[38;5;208m"}, /* Orange */
+    {"saturn",  'S', "\033[38;5;222m"}, /* Gold */
+    {"uranus",  'U', "\033[1;36m"},     /* Cyan */
+    {"neptune", 'N', "\033[1;34m"},     /* Blue */
+    {"moon",    'o', "\033[38;5;252m"}, /* Light gray */
+    {NULL, 0, NULL}
+};
+
+static const planet_display_t *get_planet_display(const char *name)
+{
+    int i;
+    for (i = 0; planet_displays[i].name; i++) {
+        if (strcasecmp(planet_displays[i].name, name) == 0) {
+            return &planet_displays[i];
+        }
+    }
+    return NULL;
+}
+
+int do_tscatter(const char **bodies, int num_bodies, const char *follow)
+{
+    int width, height;
+    int plot_width, plot_height;
+    double t_days = 0;
+    double dt = 1.0;       /* Days per step */
+    int running = 1;
+    int need_redraw = 1;
+    int playing = 0;
+    int x, y, i;
+    char *screen;
+    char *colors;          /* Color index per cell */
+    double xmin, xmax, ymin, ymax;
+    double view_scale = 2.0;  /* AU - initial view radius */
+    double center_x = 0, center_y = 0;
+    double aspect_ratio;   /* Character aspect correction */
+    
+    iplot_setup_term();
+    iplot_get_terminal_size(&width, &height);
+    
+    plot_width = width;
+    plot_height = height - 3;
+    
+    /* Characters are ~2x tall as wide, so scale x by 0.5 for square aspect */
+    aspect_ratio = 0.5;
+    
+    screen = (char *)malloc(plot_width * plot_height);
+    colors = (char *)malloc(plot_width * plot_height);
+    
+    if (!screen || !colors) {
+        iplot_restore_term();
+        free(screen); free(colors);
+        return 0;
+    }
+    
+    while (running) {
+        if (need_redraw) {
+            double positions[20][2];  /* x, y for each body */
+            double follow_x = 0, follow_y = 0;
+            double x_scale, y_scale;
+            
+            /* Get positions */
+            for (i = 0; i < num_bodies && i < 20; i++) {
+                planet_pos(bodies[i], t_days, &positions[i][0], &positions[i][1]);
+            }
+            
+            /* Calculate follow center */
+            if (follow && strcmp(follow, "sun") != 0) {
+                int follow_count = 0;
+                follow_x = follow_y = 0;
+                
+                /* Check if following a specific body or a group */
+                for (i = 0; i < num_bodies; i++) {
+                    if (strcasecmp(bodies[i], follow) == 0 ||
+                        strcmp(follow, "all") == 0) {
+                        follow_x += positions[i][0];
+                        follow_y += positions[i][1];
+                        follow_count++;
+                    }
+                }
+                
+                /* Special: "earth,moon" or "inner" */
+                if (strcasecmp(follow, "earth") == 0 || 
+                    strcasecmp(follow, "moon") == 0 ||
+                    strcasecmp(follow, "earth,moon") == 0) {
+                    double ex, ey, mx, my;
+                    planet_pos("earth", t_days, &ex, &ey);
+                    planet_pos("moon", t_days, &mx, &my);
+                    follow_x = (ex + mx) / 2;
+                    follow_y = (ey + my) / 2;
+                    follow_count = 1;
+                }
+                
+                if (follow_count > 0) {
+                    follow_x /= follow_count;
+                    follow_y /= follow_count;
+                }
+            }
+            
+            center_x = follow_x;
+            center_y = follow_y;
+            
+            /* Set view bounds with aspect ratio correction */
+            /* x needs to span more space because chars are wider than tall */
+            x_scale = view_scale * (plot_width * aspect_ratio) / plot_height;
+            y_scale = view_scale;
+            
+            xmin = center_x - x_scale;
+            xmax = center_x + x_scale;
+            ymin = center_y - y_scale;
+            ymax = center_y + y_scale;
+            
+            /* Clear screen buffer */
+            memset(screen, ' ', plot_width * plot_height);
+            memset(colors, 0, plot_width * plot_height);
+            
+            /* Draw orbit traces (faint) */
+            for (i = 0; i < num_bodies; i++) {
+                const planet_t *p = find_planet(bodies[i]);
+                if (p && p->a > 0 && strcmp(bodies[i], "moon") != 0) {
+                    /* Draw circular orbit */
+                    int steps = 100;
+                    int s;
+                    for (s = 0; s < steps; s++) {
+                        double theta = 2 * M_PI * s / steps;
+                        double ox = p->a * cos(theta) - follow_x;
+                        double oy = p->a * sin(theta) - follow_y;
+                        
+                        int px = (int)((ox - (xmin - follow_x)) / (xmax - xmin) * plot_width);
+                        int py = (int)(((ymax - follow_y) - oy) / (ymax - ymin) * plot_height);
+                        
+                        if (px >= 0 && px < plot_width && py >= 0 && py < plot_height) {
+                            int idx = py * plot_width + px;
+                            if (screen[idx] == ' ') {
+                                screen[idx] = '.';
+                                colors[idx] = 10;  /* Dim */
+                            }
+                        }
+                    }
+                }
+            }
+            
+            /* Draw bodies */
+            for (i = 0; i < num_bodies; i++) {
+                double bx = positions[i][0] - follow_x;
+                double by = positions[i][1] - follow_y;
+                const planet_display_t *disp = get_planet_display(bodies[i]);
+                
+                int px = (int)((bx - (xmin - follow_x)) / (xmax - xmin) * plot_width);
+                int py = (int)(((ymax - follow_y) - by) / (ymax - ymin) * plot_height);
+                
+                if (px >= 0 && px < plot_width && py >= 0 && py < plot_height) {
+                    int idx = py * plot_width + px;
+                    screen[idx] = disp ? disp->symbol : '*';
+                    colors[idx] = i + 1;  /* Planet index + 1 */
+                }
+            }
+            
+            /* Render */
+            printf("\033[H");
+            
+            for (y = 0; y < plot_height; y++) {
+                for (x = 0; x < plot_width; x++) {
+                    int idx = y * plot_width + x;
+                    char c = screen[idx];
+                    int ci = colors[idx];
+                    
+                    if (ci == 0 || ci == 10) {
+                        /* Empty or orbit trace */
+                        if (c == '.') {
+                            printf("\033[38;5;240m.\033[0m");
+                        } else {
+                            putchar(' ');
+                        }
+                    } else {
+                        /* Planet */
+                        const planet_display_t *disp = get_planet_display(bodies[ci - 1]);
+                        if (disp && disp->color) {
+                            printf("%s%c\033[0m", disp->color, c);
+                        } else {
+                            putchar(c);
+                        }
+                    }
+                }
+                if (y < plot_height - 1) putchar('\n');
+            }
+            
+            /* Legend */
+            printf("\033[0m\n\033[K");
+            for (i = 0; i < num_bodies && i < 10; i++) {
+                const planet_display_t *disp = get_planet_display(bodies[i]);
+                if (disp && disp->color) {
+                    printf("%s%c\033[0m=%s ", disp->color, disp->symbol, bodies[i]);
+                }
+            }
+            
+            /* Status */
+            printf("\n\033[K\033[1;36mtscatter\033[0m t=%.1f days (%.2f yrs) dt=%.2f %s  ",
+                   t_days, t_days / 365.256, dt, playing ? "\033[32m▶\033[0m" : "\033[90m⏸\033[0m");
+            printf("\033[90m[←→=time ↑↓=dt +/-=zoom space=play r=reset q=quit]\033[0m");
+            fflush(stdout);
+            
+            need_redraw = 0;
+        }
+        
+        /* Check for auto-advance if playing */
+        if (playing) {
+            struct timespec ts = {0, 50000000};  /* 50ms = 20 fps */
+            nanosleep(&ts, NULL);
+            t_days += dt;
+            need_redraw = 1;
+        }
+        
+        /* Non-blocking key check when playing */
+        {
+            fd_set fds;
+            struct timeval tv;
+            int key = -1;
+            
+            FD_ZERO(&fds);
+            FD_SET(STDIN_FILENO, &fds);
+            tv.tv_sec = 0;
+            tv.tv_usec = playing ? 0 : 100000;  /* Block if not playing */
+            
+            if (select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv) > 0) {
+                key = iplot_read_key();
+            }
+            
+            if (key > 0) {
+                switch (key) {
+                    case 'q': case 'Q': case 27:
+                        running = 0;
+                        break;
+                    case 1004:  /* Left - go back in time */
+                        t_days -= dt * 10;
+                        need_redraw = 1;
+                        break;
+                    case 1003:  /* Right - go forward */
+                        t_days += dt * 10;
+                        need_redraw = 1;
+                        break;
+                    case 1001:  /* Up - increase dt */
+                        dt *= 2;
+                        if (dt > 365) dt = 365;
+                        need_redraw = 1;
+                        break;
+                    case 1002:  /* Down - decrease dt */
+                        dt /= 2;
+                        if (dt < 0.01) dt = 0.01;
+                        need_redraw = 1;
+                        break;
+                    case '+': case '=':  /* Zoom in */
+                        view_scale *= 0.8;
+                        if (view_scale < 0.001) view_scale = 0.001;
+                        need_redraw = 1;
+                        break;
+                    case '-': case '_':  /* Zoom out */
+                        view_scale *= 1.25;
+                        if (view_scale > 50) view_scale = 50;
+                        need_redraw = 1;
+                        break;
+                    case ' ':  /* Play/pause */
+                        playing = !playing;
+                        need_redraw = 1;
+                        break;
+                    case 'r': case 'R':  /* Reset */
+                        t_days = 0;
+                        dt = 1.0;
+                        view_scale = 2.0;
+                        need_redraw = 1;
+                        break;
+                    case '1':  /* Inner planets view */
+                        view_scale = 2.0;
+                        need_redraw = 1;
+                        break;
+                    case '2':  /* Outer planets view */
+                        view_scale = 35.0;
+                        need_redraw = 1;
+                        break;
+                    case '3':  /* Moon view */
+                        view_scale = 0.01;
+                        need_redraw = 1;
+                        break;
+                }
+            }
+        }
+    }
+    
+    free(screen);
+    free(colors);
+    iplot_restore_term();
+    return 1;
+}
+
+#else
+/* Stubs for non-Unix */
+int do_iscatter(double *xs, double *ys, int *iters, int n, int max_iter)
+{
+    (void)xs; (void)ys; (void)iters; (void)n; (void)max_iter;
+    printf("iscatter requires Unix terminal\n");
+    return 0;
+}
+
+int do_tscatter(const char **bodies, int num_bodies, const char *follow)
+{
+    (void)bodies; (void)num_bodies; (void)follow;
+    printf("tscatter requires Unix terminal\n");
+    return 0;
+}
+#endif
+
+/* Planet position function for calculator */
+void fn_planet(const char *name, double t_days, double *x, double *y)
+{
+    planet_pos(name, t_days, x, y);
 }
