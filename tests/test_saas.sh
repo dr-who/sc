@@ -287,6 +287,98 @@ else
     fail "Month 1: new_customers = active_customers"
 fi
 
+# Test new SaaS functions
+
+echo ""
+echo "Testing: concentration(data)"
+result=$($SC << 'INPUT'
+load hourlybilling
+c = concentration(data)
+cols(c) == 5
+quit
+INPUT
+)
+if echo "$result" | grep -q "true"; then
+    pass "concentration returns 5 columns"
+else
+    fail "concentration returns 5 columns"
+fi
+
+echo ""
+echo "Testing: toprevenue(data, 5)"
+result=$($SC << 'INPUT'
+load hourlybilling
+t = toprevenue(data, 5)
+rows(t) == 5
+quit
+INPUT
+)
+if echo "$result" | grep -q "true"; then
+    pass "toprevenue returns correct rows"
+else
+    fail "toprevenue returns correct rows"
+fi
+
+echo ""
+echo "Testing: quickratio(data)"
+result=$($SC << 'INPUT'
+load hourlybilling
+q = quickratio(data)
+cols(q) == 2
+quit
+INPUT
+)
+if echo "$result" | grep -q "true"; then
+    pass "quickratio returns 2 columns"
+else
+    fail "quickratio returns 2 columns"
+fi
+
+echo ""
+echo "Testing: ltv(data)"
+result=$($SC << 'INPUT'
+load hourlybilling
+l = ltv(data)
+cols(l) == 5
+quit
+INPUT
+)
+if echo "$result" | grep -q "true"; then
+    pass "ltv returns 5 columns"
+else
+    fail "ltv returns 5 columns"
+fi
+
+echo ""
+echo "Testing: revchurn(data)"
+result=$($SC << 'INPUT'
+load hourlybilling
+r = revchurn(data)
+cols(r) == 4
+quit
+INPUT
+)
+if echo "$result" | grep -q "true"; then
+    pass "revchurn returns 4 columns"
+else
+    fail "revchurn returns 4 columns"
+fi
+
+echo ""
+echo "Testing: netchurn(data)"
+result=$($SC << 'INPUT'
+load hourlybilling
+n = netchurn(data)
+cols(n) == 2
+quit
+INPUT
+)
+if echo "$result" | grep -q "true"; then
+    pass "netchurn returns 2 columns"
+else
+    fail "netchurn returns 2 columns"
+fi
+
 echo ""
 echo "=============================="
 echo "SaaS Tests: $PASS passed, $FAIL failed"

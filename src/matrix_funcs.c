@@ -223,6 +223,11 @@ void matrix_funcs_init(void) {
     reg_mat1("grr", mat_grr);
     reg_mat1("retention", mat_retention);
     reg_mat1("tenure", mat_tenure);
+    reg_mat1("concentration", mat_concentration);
+    reg_mat1("revchurn", mat_revchurn);
+    reg_mat1("netchurn", mat_netchurn);
+    reg_mat1("quickratio", mat_quickratio);
+    reg_mat1("ltv", mat_ltv);
 }
 
 MatFuncEntry *matrix_func_lookup(const char *name) {

@@ -37,3 +37,14 @@ void mat_retention(matrix_t *r, const matrix_t *data);
 void mat_retime(matrix_t *r, const matrix_t *data, int interval);
 
 #endif /* SAAS_H */
+
+/* Additional SaaS metrics */
+void mat_toprevenue(matrix_t *result, const matrix_t *data, int top_n);
+void mat_concentration(matrix_t *result, const matrix_t *data);
+void mat_revchurn(matrix_t *result, const matrix_t *data);
+void mat_netchurn(matrix_t *result, const matrix_t *data);
+void mat_quickratio(matrix_t *result, const matrix_t *data);
+void mat_ltv(matrix_t *result, const matrix_t *data);
+
+/* Data generation */
+void saas_generate_billing_data(int target_rows);

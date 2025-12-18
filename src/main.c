@@ -477,9 +477,28 @@ int main(int argc, char *argv[])
                 printf("  fisheriris / iris  - 150 flowers, creates 'meas' and 'species'\n");
                 printf("  hald / cement      - 13 cement samples, creates 'X' and 'y'\n");
                 printf("  imports85 / auto   - 98 automobiles, creates 'auto' and 'price'\n");
+                printf("  hourlybilling      - SaaS billing data (run 'generate' first)\n");
             } else {
                 cmd_load_dataset(name);
             }
+            continue;
+        }
+        
+        /* Generate SaaS demo data */
+        if (str_starts(input, "generate")) {
+            extern void saas_generate_billing_data(int target_rows);
+            const char *arg = input + 8;
+            int rows = 100000;  /* Default */
+            
+            while (*arg == ' ') arg++;
+            if (*arg >= '0' && *arg <= '9') {
+                rows = atoi(arg);
+                if (rows < 1000) rows = 1000;
+                if (rows > 1000000) rows = 1000000;
+            }
+            
+            printf("Generating SaaS demo data (%d rows)...\n", rows);
+            saas_generate_billing_data(rows);
             continue;
         }
         

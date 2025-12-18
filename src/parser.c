@@ -12697,6 +12697,38 @@ static int parse_value_factor(value_t *result)
                 return 1;
             }
             
+            /* toprevenue(data, n) - top N customers by revenue */
+            if (str_eq(name, "toprevenue")) {
+                extern void mat_toprevenue(matrix_t *result, const matrix_t *data, int top_n);
+                int top_n = 10;  /* Default to top 10 */
+                apfc n_val;
+                
+                next_token();
+                if (!parse_value(&pv_arg)) return 0;
+                if (pv_arg.type != VAL_MATRIX) {
+                    printf("Error: toprevenue requires matrix input\n");
+                    return 0;
+                }
+                
+                /* Optional second argument */
+                if (current_token.type == TOK_COMMA) {
+                    next_token();
+                    if (!parse_expr(&n_val)) return 0;
+                    top_n = apf_to_long(&n_val.re);
+                    if (top_n < 1) top_n = 1;
+                }
+                
+                if (current_token.type != TOK_RPAREN) {
+                    printf("Error: expected ')'\n");
+                    return 0;
+                }
+                next_token();
+                
+                result->type = VAL_MATRIX;
+                mat_toprevenue(&result->v.matrix, &pv_arg.v.matrix, top_n);
+                return 1;
+            }
+            
             /* polyval(p, x) - evaluate polynomial at x */
             if (str_eq(name, "polyval")) {
                 apfc x_val;

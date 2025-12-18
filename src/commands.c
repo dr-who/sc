@@ -1730,8 +1730,15 @@ int cmd_load_dataset(const char *name)
         }
     }
     
+    /* Cross-platform path separator */
+#ifdef _WIN32
+#define PATH_SEP "\\"
+#else
+#define PATH_SEP "/"
+#endif
+    
     /* Try ./datasets directory */
-    sprintf(path, "datasets/%s", filename);
+    sprintf(path, "datasets" PATH_SEP "%s", filename);
     fp = fopen(path, "r");
     if (fp) {
         fclose(fp);
@@ -1752,7 +1759,7 @@ int cmd_load_dataset(const char *name)
         
         /* Try with env var path */
         if (datasets_path && datasets_path[0]) {
-            sprintf(path, "%s/%s", datasets_path, csv_name);
+            sprintf(path, "%s" PATH_SEP "%s", datasets_path, csv_name);
             fp = fopen(path, "r");
             if (fp) {
                 fclose(fp);
@@ -1761,7 +1768,7 @@ int cmd_load_dataset(const char *name)
         }
         
         /* Try ./datasets */
-        sprintf(path, "datasets/%s", csv_name);
+        sprintf(path, "datasets" PATH_SEP "%s", csv_name);
         fp = fopen(path, "r");
         if (fp) {
             fclose(fp);
@@ -1779,9 +1786,9 @@ int cmd_load_dataset(const char *name)
     printf("Error: Dataset '%s' not found\n", name);
     printf("Searched in:\n");
     if (datasets_path && datasets_path[0]) {
-        printf("  %s/%s\n", datasets_path, filename);
+        printf("  %s" PATH_SEP "%s\n", datasets_path, filename);
     }
-    printf("  datasets/%s\n", filename);
+    printf("  datasets" PATH_SEP "%s\n", filename);
     printf("  %s\n", filename);
     printf("Set SC_DATASETS environment variable to specify dataset path.\n");
     return 0;
@@ -2251,7 +2258,7 @@ void cmd_demo_saas(void)
     mat_arena_reset();
     if (!cmd_load_dataset("hourlybilling")) {
         printf("\nError: Could not load hourlybilling dataset\n");
-        printf("Generate it with: ./gen_hourly_billing.sh datasets/hourlybilling.csv 100000\n");
+        printf("Run 'generate' command first to create demo data.\n");
         return;
     }
     
@@ -2485,10 +2492,96 @@ void cmd_demo_saas(void)
     printf("    Min Tenure:      %.0f months\n\n", apf_to_double(&MAT_AT(&ten, ten.rows-1, 1).re));
     
     /* ================================================================
+     * REVENUE CONCENTRATION
+     * ================================================================ */
+    printf("╔══════════════════════════════════════════════════════════════════╗\n");
+    printf("║  6. REVENUE CONCENTRATION                                        ║\n");
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n");
+    
+    {
+        extern void mat_concentration(matrix_t *r, const matrix_t *data);
+        extern void mat_toprevenue(matrix_t *r, const matrix_t *data, int n);
+        matrix_t conc, topr;
+        
+        printf(">>> concentration(data)  %% Revenue concentration metrics\n\n");
+        mat_concentration(&conc, data);
+        
+        printf("    Top 1 customer:      %.1f%% of revenue\n", apf_to_double(&MAT_AT(&conc, 0, 0).re));
+        printf("    Top 5 customers:     %.1f%% of revenue\n", apf_to_double(&MAT_AT(&conc, 0, 1).re));
+        printf("    Top 10 customers:    %.1f%% of revenue\n", apf_to_double(&MAT_AT(&conc, 0, 2).re));
+        printf("    Top 20%% customers:   %.1f%% of revenue\n", apf_to_double(&MAT_AT(&conc, 0, 3).re));
+        printf("    HHI Index:           %.0f ", apf_to_double(&MAT_AT(&conc, 0, 4).re));
+        {
+            double hhi = apf_to_double(&MAT_AT(&conc, 0, 4).re);
+            if (hhi < 1500) printf("(low concentration)\n");
+            else if (hhi < 2500) printf("(moderate concentration)\n");
+            else printf("(high concentration)\n");
+        }
+        
+        printf("\n>>> toprevenue(data, 5)  %% Top 5 customers by revenue\n\n");
+        mat_toprevenue(&topr, data, 5);
+        printf("    Customer    Total Rev      %% of Total\n");
+        printf("    ────────    ─────────      ──────────\n");
+        for (i = 0; i < 5 && i < topr.rows; i++) {
+            printf("    %8d    $%9.2f      %5.1f%%\n",
+                   (int)apf_to_double(&MAT_AT(&topr, i, 0).re),
+                   apf_to_double(&MAT_AT(&topr, i, 1).re),
+                   apf_to_double(&MAT_AT(&topr, i, 2).re));
+        }
+        printf("\n");
+    }
+    
+    /* ================================================================
+     * GROWTH EFFICIENCY
+     * ================================================================ */
+    printf("╔══════════════════════════════════════════════════════════════════╗\n");
+    printf("║  7. GROWTH EFFICIENCY                                            ║\n");
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n");
+    
+    {
+        extern void mat_quickratio(matrix_t *r, const matrix_t *data);
+        extern void mat_netchurn(matrix_t *r, const matrix_t *data);
+        matrix_t qr, nc;
+        double avg_qr = 0, avg_nc = 0;
+        int qr_count = 0;
+        
+        mat_quickratio(&qr, data);
+        mat_netchurn(&nc, data);
+        
+        printf(">>> quickratio(data)  %% SaaS Quick Ratio\n\n");
+        printf("    Quick Ratio = (New MRR + Expansion) / (Churn + Contraction)\n\n");
+        
+        for (i = 1; i < qr.rows; i++) {
+            double q = apf_to_double(&MAT_AT(&qr, i, 1).re);
+            if (q < 100) { avg_qr += q; qr_count++; }
+        }
+        if (qr_count > 0) avg_qr /= qr_count;
+        
+        printf("    Average Quick Ratio: %.2f\n", avg_qr);
+        if (avg_qr >= 4) printf("    Assessment:          ✓ EXCELLENT (>4x)\n");
+        else if (avg_qr >= 2) printf("    Assessment:          ✓ GOOD (>2x)\n");
+        else if (avg_qr >= 1) printf("    Assessment:          ⚠ GROWING (<2x)\n");
+        else printf("    Assessment:          ✗ SHRINKING (<1x)\n");
+        
+        printf("\n>>> netchurn(data)  %% Net Churn Rate\n\n");
+        for (i = 1; i < nc.rows; i++) {
+            avg_nc += apf_to_double(&MAT_AT(&nc, i, 1).re);
+        }
+        if (nc.rows > 1) avg_nc /= (nc.rows - 1);
+        
+        printf("    Avg Net Churn:       %.2f%%\n", avg_nc);
+        if (avg_nc < 0) printf("    Status:              ✓ Net EXPANSION (negative churn!)\n");
+        else if (avg_nc < 2) printf("    Status:              ✓ LOW churn\n");
+        else if (avg_nc < 5) printf("    Status:              ⚠ MODERATE churn\n");
+        else printf("    Status:              ✗ HIGH churn\n");
+        printf("\n");
+    }
+    
+    /* ================================================================
      * UNIT ECONOMICS
      * ================================================================ */
     printf("╔══════════════════════════════════════════════════════════════════╗\n");
-    printf("║  6. UNIT ECONOMICS (Derived)                                     ║\n");
+    printf("║  8. UNIT ECONOMICS (Derived)                                     ║\n");
     printf("╚══════════════════════════════════════════════════════════════════╝\n\n");
     
     {
@@ -2538,9 +2631,11 @@ void cmd_demo_saas(void)
     printf("    └─────────────────────────────────────────────────────────────┘\n\n");
     
     printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
-    printf("Available SaaS functions: mrr, arpu, mrrbridge, customercount,\n");
-    printf("  newcustomers, churn, reactivated, churnrate, nrr, grr,\n");
-    printf("  retention, tenure\n");
+    printf("Available SaaS functions:\n");
+    printf("  Revenue:     mrr, arpu, mrrbridge, revchurn, netchurn\n");
+    printf("  Customers:   customercount, newcustomers, churn, reactivated\n");
+    printf("  Retention:   churnrate, nrr, grr, retention, tenure\n");
+    printf("  Analysis:    concentration, toprevenue, quickratio, ltv\n");
     printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
     
 #else

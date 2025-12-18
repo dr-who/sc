@@ -3255,6 +3255,36 @@ static const FuncEntry func_registry[] = {
      {"tenure(rand(100,4))", NULL, NULL, NULL, NULL, NULL},
      "retention, churn"},
     
+    {"toprevenue", FH_TOPREVENUE, 1, 2, FF_MATRIX, "SaaS", "toprevenue(data, n)",
+     "Top N customers by revenue: [customerid, total_revenue, pct_of_total].",
+     {"toprevenue(rand(100,4), 10)", NULL, NULL, NULL, NULL, NULL},
+     "concentration, ltv"},
+    
+    {"concentration", FH_CONCENTRATION, 1, 1, FF_MATRIX, "SaaS", "concentration(data)",
+     "Revenue concentration: [top1%, top5%, top10%, top20%, herfindahl_index].",
+     {"concentration(rand(100,4))", NULL, NULL, NULL, NULL, NULL},
+     "toprevenue"},
+    
+    {"revchurn", FH_REVCHURN, 1, 1, FF_MATRIX, "SaaS", "revchurn(data)",
+     "Revenue churn rate: [month, churned_mrr, start_mrr, rev_churn%].",
+     {"revchurn(rand(100,4))", NULL, NULL, NULL, NULL, NULL},
+     "churnrate, netchurn"},
+    
+    {"netchurn", FH_NETCHURN, 1, 1, FF_MATRIX, "SaaS", "netchurn(data)",
+     "Net churn rate: (churn + contraction - expansion) / start_mrr.",
+     {"netchurn(rand(100,4))", NULL, NULL, NULL, NULL, NULL},
+     "revchurn, quickratio"},
+    
+    {"quickratio", FH_QUICKRATIO, 1, 1, FF_MATRIX, "SaaS", "quickratio(data)",
+     "SaaS Quick Ratio: (new + expansion) / (churn + contraction). >4 excellent.",
+     {"quickratio(rand(100,4))", NULL, NULL, NULL, NULL, NULL},
+     "mrrbridge, netchurn"},
+    
+    {"ltv", FH_LTV, 1, 1, FF_MATRIX, "SaaS", "ltv(data)",
+     "Customer LTV: [id, total_rev, tenure, monthly_avg, estimated_ltv].",
+     {"ltv(rand(100,4))", NULL, NULL, NULL, NULL, NULL},
+     "tenure, arpu"},
+    
     /* ===== FINANCIAL FUNCTIONS ===== */
     {"npv", FH_NONE, 2, 2, FF_SCALAR, "Financial", "npv(rate, cashflows)",
      "Net Present Value of cashflows at discount rate.",
@@ -3514,7 +3544,7 @@ void func_demo(const char *name)
         mat_arena_reset();
         if (!cmd_load_dataset("hourlybilling")) {
             printf("Error: Could not load hourlybilling dataset.\n");
-            printf("Generate with: ./gen_hourly_billing.sh datasets/hourlybilling.csv 50000\n\n");
+            printf("Run 'generate' command first to create demo data.\n\n");
             return;
         }
         printf("\n");

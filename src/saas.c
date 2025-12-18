@@ -13,9 +13,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include "matrix.h"
 #include "apf.h"
 #include "apfc.h"
+#include "apf_native.h"
 
 /* External datetime functions */
 extern void unix_to_datetime(long ts, int *year, int *month, int *day, 
@@ -980,4 +982,474 @@ void mat_retime(matrix_t *r, const matrix_t *data, int interval)
     
     free(bucket);
     free(sums);
+}
+
+/* ========== Revenue Concentration ========== */
+
+/* toprevenue - Get top N customers by revenue
+ * Returns: [customerid, total_revenue, pct_of_total] sorted descending */
+void mat_toprevenue(matrix_t *result, const matrix_t *data, int top_n)
+{
+    int i, j, n;
+    long *cust_ids;
+    double *cust_rev;
+    int num_custs = 0;
+    double total_rev = 0;
+    
+    if (!data || data->cols < 4) {
+        mat_zero(result, 0, 0);
+        return;
+    }
+    
+    n = data->rows;
+    cust_ids = (long *)malloc(n * sizeof(long));
+    cust_rev = (double *)malloc(n * sizeof(double));
+    if (!cust_ids || !cust_rev) {
+        free(cust_ids); free(cust_rev);
+        mat_zero(result, 0, 0);
+        return;
+    }
+    
+    /* Aggregate revenue by customer */
+    for (i = 0; i < n; i++) {
+        long cid = apf_to_long(&MAT_AT(data, i, 1).re);
+        double rev = apf_to_double(&MAT_AT(data, i, 3).re);
+        int found = -1;
+        
+        for (j = 0; j < num_custs; j++) {
+            if (cust_ids[j] == cid) { found = j; break; }
+        }
+        
+        if (found < 0) {
+            found = num_custs++;
+            cust_ids[found] = cid;
+            cust_rev[found] = 0;
+        }
+        cust_rev[found] += rev;
+        total_rev += rev;
+    }
+    
+    /* Sort by revenue descending (simple bubble sort) */
+    for (i = 0; i < num_custs - 1; i++) {
+        for (j = i + 1; j < num_custs; j++) {
+            if (cust_rev[j] > cust_rev[i]) {
+                double tmp_rev = cust_rev[i];
+                long tmp_id = cust_ids[i];
+                cust_rev[i] = cust_rev[j];
+                cust_ids[i] = cust_ids[j];
+                cust_rev[j] = tmp_rev;
+                cust_ids[j] = tmp_id;
+            }
+        }
+    }
+    
+    /* Return top N */
+    if (top_n <= 0 || top_n > num_custs) top_n = num_custs;
+    mat_zero(result, top_n, 3);
+    
+    for (i = 0; i < top_n; i++) {
+        apf_from_int(&MAT_AT(result, i, 0).re, (int)cust_ids[i]);
+        apf_from_double(&MAT_AT(result, i, 1).re, cust_rev[i]);
+        apf_from_double(&MAT_AT(result, i, 2).re, (cust_rev[i] / total_rev) * 100);
+    }
+    
+    free(cust_ids);
+    free(cust_rev);
+}
+
+/* concentration - Revenue concentration metrics
+ * Returns: [top1%, top5%, top10%, top20%, herfindahl_index] */
+void mat_concentration(matrix_t *result, const matrix_t *data)
+{
+    int i, j, n;
+    long *cust_ids;
+    double *cust_rev;
+    int num_custs = 0;
+    double total_rev = 0;
+    double top1 = 0, top5 = 0, top10 = 0, top20 = 0;
+    double hhi = 0;  /* Herfindahl-Hirschman Index */
+    
+    if (!data || data->cols < 4) {
+        mat_zero(result, 1, 5);
+        return;
+    }
+    
+    n = data->rows;
+    cust_ids = (long *)malloc(n * sizeof(long));
+    cust_rev = (double *)malloc(n * sizeof(double));
+    if (!cust_ids || !cust_rev) {
+        free(cust_ids); free(cust_rev);
+        mat_zero(result, 1, 5);
+        return;
+    }
+    
+    /* Aggregate revenue by customer */
+    for (i = 0; i < n; i++) {
+        long cid = apf_to_long(&MAT_AT(data, i, 1).re);
+        double rev = apf_to_double(&MAT_AT(data, i, 3).re);
+        int found = -1;
+        
+        for (j = 0; j < num_custs; j++) {
+            if (cust_ids[j] == cid) { found = j; break; }
+        }
+        
+        if (found < 0) {
+            found = num_custs++;
+            cust_ids[found] = cid;
+            cust_rev[found] = 0;
+        }
+        cust_rev[found] += rev;
+        total_rev += rev;
+    }
+    
+    /* Sort by revenue descending */
+    for (i = 0; i < num_custs - 1; i++) {
+        for (j = i + 1; j < num_custs; j++) {
+            if (cust_rev[j] > cust_rev[i]) {
+                double tmp = cust_rev[i];
+                cust_rev[i] = cust_rev[j];
+                cust_rev[j] = tmp;
+            }
+        }
+    }
+    
+    /* Calculate concentration */
+    for (i = 0; i < num_custs; i++) {
+        double pct = cust_rev[i] / total_rev;
+        hhi += pct * pct;  /* Sum of squared market shares */
+        
+        if (i < 1) top1 += pct;
+        if (i < 5) top5 += pct;
+        if (i < 10) top10 += pct;
+        if (i < (num_custs / 5 + 1)) top20 += pct;  /* Top 20% of customers */
+    }
+    
+    mat_zero(result, 1, 5);
+    apf_from_double(&MAT_AT(result, 0, 0).re, top1 * 100);
+    apf_from_double(&MAT_AT(result, 0, 1).re, top5 * 100);
+    apf_from_double(&MAT_AT(result, 0, 2).re, top10 * 100);
+    apf_from_double(&MAT_AT(result, 0, 3).re, top20 * 100);
+    apf_from_double(&MAT_AT(result, 0, 4).re, hhi * 10000);  /* HHI scaled 0-10000 */
+    
+    free(cust_ids);
+    free(cust_rev);
+}
+
+/* revchurn - Revenue churn rate per month
+ * Returns: [month, churned_mrr, start_mrr, rev_churn_rate%] */
+void mat_revchurn(matrix_t *result, const matrix_t *data)
+{
+    matrix_t bridge;
+    matrix_t mrr_data;
+    int i, n;
+    
+    mat_mrrbridge(&bridge, data);
+    mat_mrr(&mrr_data, data);
+    
+    n = bridge.rows;
+    mat_zero(result, n, 4);
+    
+    for (i = 0; i < n; i++) {
+        double month_ts = apf_to_double(&MAT_AT(&bridge, i, 0).re);
+        double churned = apf_to_double(&MAT_AT(&bridge, i, 4).re);
+        double prev_mrr = (i > 0) ? apf_to_double(&MAT_AT(&mrr_data, i-1, 1).re) : 0;
+        double churn_rate = (prev_mrr > 0) ? (churned / prev_mrr) * 100 : 0;
+        
+        apf_from_double(&MAT_AT(result, i, 0).re, month_ts);
+        apf_from_double(&MAT_AT(result, i, 1).re, churned);
+        apf_from_double(&MAT_AT(result, i, 2).re, prev_mrr);
+        apf_from_double(&MAT_AT(result, i, 3).re, churn_rate);
+    }
+}
+
+/* netchurn - Net churn rate (including contraction, excluding expansion)
+ * Returns: [month, net_churn_rate%] where net_churn = (churn + contraction - expansion) / start_mrr */
+void mat_netchurn(matrix_t *result, const matrix_t *data)
+{
+    matrix_t bridge;
+    matrix_t mrr_data;
+    int i, n;
+    
+    mat_mrrbridge(&bridge, data);
+    mat_mrr(&mrr_data, data);
+    
+    n = bridge.rows;
+    mat_zero(result, n, 2);
+    
+    for (i = 0; i < n; i++) {
+        double month_ts = apf_to_double(&MAT_AT(&bridge, i, 0).re);
+        double expansion = apf_to_double(&MAT_AT(&bridge, i, 2).re);
+        double contraction = apf_to_double(&MAT_AT(&bridge, i, 3).re);
+        double churned = apf_to_double(&MAT_AT(&bridge, i, 4).re);
+        double prev_mrr = (i > 0) ? apf_to_double(&MAT_AT(&mrr_data, i-1, 1).re) : 0;
+        double net_churn = (prev_mrr > 0) ? ((churned + contraction - expansion) / prev_mrr) * 100 : 0;
+        
+        apf_from_double(&MAT_AT(result, i, 0).re, month_ts);
+        apf_from_double(&MAT_AT(result, i, 1).re, net_churn);
+    }
+}
+
+/* quickratio - SaaS Quick Ratio = (new + expansion) / (churn + contraction)
+ * Higher is better. >4 is excellent, >2 is good, <1 is shrinking */
+void mat_quickratio(matrix_t *result, const matrix_t *data)
+{
+    matrix_t bridge;
+    int i, n;
+    
+    mat_mrrbridge(&bridge, data);
+    n = bridge.rows;
+    mat_zero(result, n, 2);
+    
+    for (i = 0; i < n; i++) {
+        double month_ts = apf_to_double(&MAT_AT(&bridge, i, 0).re);
+        double new_mrr = apf_to_double(&MAT_AT(&bridge, i, 1).re);
+        double expansion = apf_to_double(&MAT_AT(&bridge, i, 2).re);
+        double contraction = apf_to_double(&MAT_AT(&bridge, i, 3).re);
+        double churned = apf_to_double(&MAT_AT(&bridge, i, 4).re);
+        
+        double growth = new_mrr + expansion;
+        double loss = contraction + churned;
+        double qr = (loss > 0) ? growth / loss : (growth > 0 ? 999 : 0);
+        
+        apf_from_double(&MAT_AT(result, i, 0).re, month_ts);
+        apf_from_double(&MAT_AT(result, i, 1).re, qr);
+    }
+}
+
+/* ltv - Customer Lifetime Value per customer
+ * Returns: [customerid, total_revenue, tenure_months, monthly_avg, estimated_ltv] */
+void mat_ltv(matrix_t *result, const matrix_t *data)
+{
+    matrix_t ten;
+    int i, j, n;
+    long *cust_ids;
+    double *cust_rev;
+    int num_custs = 0;
+    double avg_churn = 0.05;  /* Assume 5% if can't calculate */
+    
+    if (!data || data->cols < 4) {
+        mat_zero(result, 0, 0);
+        return;
+    }
+    
+    n = data->rows;
+    cust_ids = (long *)malloc(n * sizeof(long));
+    cust_rev = (double *)malloc(n * sizeof(double));
+    if (!cust_ids || !cust_rev) {
+        free(cust_ids); free(cust_rev);
+        mat_zero(result, 0, 0);
+        return;
+    }
+    
+    /* Get tenure data */
+    mat_tenure(&ten, data);
+    
+    /* Aggregate revenue by customer */
+    for (i = 0; i < n; i++) {
+        long cid = apf_to_long(&MAT_AT(data, i, 1).re);
+        double rev = apf_to_double(&MAT_AT(data, i, 3).re);
+        int found = -1;
+        
+        for (j = 0; j < num_custs; j++) {
+            if (cust_ids[j] == cid) { found = j; break; }
+        }
+        
+        if (found < 0) {
+            found = num_custs++;
+            cust_ids[found] = cid;
+            cust_rev[found] = 0;
+        }
+        cust_rev[found] += rev;
+    }
+    
+    /* Build result with LTV estimates */
+    mat_zero(result, num_custs, 5);
+    
+    for (i = 0; i < num_custs; i++) {
+        int tenure = 1;
+        double monthly_avg, ltv;
+        
+        /* Find tenure for this customer */
+        for (j = 0; j < ten.rows; j++) {
+            if ((int)apf_to_double(&MAT_AT(&ten, j, 0).re) == (int)cust_ids[i]) {
+                tenure = (int)apf_to_double(&MAT_AT(&ten, j, 1).re);
+                if (tenure < 1) tenure = 1;
+                break;
+            }
+        }
+        
+        monthly_avg = cust_rev[i] / tenure;
+        ltv = monthly_avg / avg_churn;  /* Simple LTV = ARPU / churn */
+        
+        apf_from_int(&MAT_AT(result, i, 0).re, (int)cust_ids[i]);
+        apf_from_double(&MAT_AT(result, i, 1).re, cust_rev[i]);
+        apf_from_int(&MAT_AT(result, i, 2).re, tenure);
+        apf_from_double(&MAT_AT(result, i, 3).re, monthly_avg);
+        apf_from_double(&MAT_AT(result, i, 4).re, ltv);
+    }
+    
+    free(cust_ids);
+    free(cust_rev);
+}
+
+/* ========== Data Generation ========== */
+
+/* Generate synthetic hourly billing data
+ * Creates datasets/hourlybilling.csv (or datasets\hourlybilling.csv on Windows) */
+void saas_generate_billing_data(int target_rows)
+{
+    FILE *fp;
+    int i, month, hour;
+    int rows_written = 0;
+    long start_ts = 1704067200;  /* Jan 1, 2024 */
+    int hours_per_month = 730;
+    int num_months = 24;
+    int total_customers = 113;
+    int hours_per_row;
+    
+    /* Customer state */
+    struct {
+        int id;
+        int segment;  /* 0=enterprise, 1=midmarket, 2=smb, 3=startup */
+        double base_size;
+        double base_rate;
+        int start_month;
+        double churn_prob;
+        double expand_prob;
+        int is_active;
+        double current_size;
+    } customers[120];
+    
+    /* Seed random */
+    srand((unsigned int)time(NULL));
+    
+#ifdef _WIN32
+    fp = fopen("datasets\\hourlybilling.csv", "w");
+#else
+    fp = fopen("datasets/hourlybilling.csv", "w");
+#endif
+    
+    if (!fp) {
+        /* Try creating directory first */
+        int dummy;
+#ifdef _WIN32
+        dummy = system("mkdir datasets 2>nul");
+        (void)dummy;
+        fp = fopen("datasets\\hourlybilling.csv", "w");
+#else
+        dummy = system("mkdir -p datasets 2>/dev/null");
+        (void)dummy;
+        fp = fopen("datasets/hourlybilling.csv", "w");
+#endif
+    }
+    
+    if (!fp) {
+        printf("Error: Cannot create hourlybilling.csv\n");
+        return;
+    }
+    
+    /* Initialize customers */
+    for (i = 0; i < total_customers; i++) {
+        customers[i].id = i + 1;
+        
+        if (i < 8) {  /* Enterprise */
+            customers[i].segment = 0;
+            customers[i].base_size = 50 + (rand() % 150);
+            customers[i].base_rate = 0.08 + (rand() % 40) / 1000.0;
+            customers[i].start_month = 1 + (rand() % 3);
+            customers[i].churn_prob = 0.01;
+            customers[i].expand_prob = 0.15;
+        } else if (i < 33) {  /* Mid-market */
+            customers[i].segment = 1;
+            customers[i].base_size = 10 + (rand() % 40);
+            customers[i].base_rate = 0.10 + (rand() % 50) / 1000.0;
+            customers[i].start_month = 1 + (rand() % 6);
+            customers[i].churn_prob = 0.03;
+            customers[i].expand_prob = 0.12;
+        } else if (i < 93) {  /* SMB */
+            customers[i].segment = 2;
+            customers[i].base_size = 1 + (rand() % 9);
+            customers[i].base_rate = 0.12 + (rand() % 80) / 1000.0;
+            customers[i].start_month = 1 + (rand() % 12);
+            customers[i].churn_prob = 0.06;
+            customers[i].expand_prob = 0.08;
+        } else {  /* Startup */
+            customers[i].segment = 3;
+            customers[i].base_size = 0.5 + (rand() % 50) / 10.0;
+            customers[i].base_rate = 0.15 + (rand() % 100) / 1000.0;
+            customers[i].start_month = 1 + (rand() % 18);
+            customers[i].churn_prob = 0.08;
+            customers[i].expand_prob = 0.25;
+        }
+        
+        customers[i].is_active = 0;
+        customers[i].current_size = customers[i].base_size;
+    }
+    
+    /* Calculate skip rate */
+    hours_per_row = (num_months * hours_per_month * 70) / target_rows;
+    if (hours_per_row < 1) hours_per_row = 1;
+    
+    /* Write header */
+    fprintf(fp, "timestamp,customerid,sizetb,billing\n");
+    
+    /* Generate data */
+    for (month = 1; month <= num_months && rows_written < target_rows; month++) {
+        long month_ts = start_ts + (long)(month - 1) * hours_per_month * 3600;
+        
+        /* Update customer states */
+        for (i = 0; i < total_customers; i++) {
+            /* Activate new customers */
+            if (!customers[i].is_active && month >= customers[i].start_month) {
+                customers[i].is_active = 1;
+                customers[i].current_size = customers[i].base_size * (0.8 + (rand() % 40) / 100.0);
+            }
+            
+            /* Check for churn */
+            if (customers[i].is_active && (rand() % 100) < (int)(customers[i].churn_prob * 100)) {
+                customers[i].is_active = 0;
+            }
+            
+            /* Check for expansion/contraction */
+            if (customers[i].is_active) {
+                if ((rand() % 100) < (int)(customers[i].expand_prob * 100)) {
+                    customers[i].current_size *= 1.1 + (rand() % 40) / 100.0;
+                } else if ((rand() % 100) < 10) {
+                    customers[i].current_size *= 0.7 + (rand() % 20) / 100.0;
+                }
+                /* Monthly noise */
+                customers[i].current_size *= 0.95 + (rand() % 10) / 100.0;
+            }
+            
+            /* Reactivation chance */
+            if (!customers[i].is_active && month > customers[i].start_month && (rand() % 100) < 5) {
+                customers[i].is_active = 1;
+                customers[i].current_size = customers[i].base_size * 0.6;
+            }
+        }
+        
+        /* Generate hourly records */
+        for (hour = 0; hour < hours_per_month && rows_written < target_rows; hour += hours_per_row) {
+            long ts = month_ts + (long)hour * 3600;
+            
+            for (i = 0; i < total_customers && rows_written < target_rows; i++) {
+                if (customers[i].is_active) {
+                    double size = customers[i].current_size * (0.9 + (rand() % 20) / 100.0);
+                    double billing = size * customers[i].base_rate;
+                    
+                    fprintf(fp, "%ld,%d,%.4f,%.2f\n", ts, customers[i].id, size, billing);
+                    rows_written++;
+                }
+            }
+        }
+    }
+    
+    fclose(fp);
+    printf("Generated datasets%chourlybilling.csv with %d rows\n", 
+#ifdef _WIN32
+           '\\',
+#else
+           '/',
+#endif
+           rows_written);
 }
