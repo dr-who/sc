@@ -21,6 +21,7 @@ SRC = src/apf.c src/apfx.c src/apfc.c \
       src/solver.c src/tvm.c src/newton.c src/orbital.c \
       src/stats.c src/plot.c \
       src/matrix.c src/matrix_ops.c src/matrix_linalg.c src/matrix_rand.c \
+      src/ml.c \
       src/main.c
 
 # Default: build 128-bit version only (most useful for DOS)

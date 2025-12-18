@@ -35,9 +35,9 @@ static void rand_uniform_internal(apf *r)
     
     r1 = rand_next();
     
-    /* Use r1, scaled by 2^31 */
-    apf_from_int(&numerator, (long)(r1 >> 1));  /* Use top 31 bits */
-    apf_from_int(&denominator, 0x7FFFFFFFL);     /* 2^31 - 1 */
+    /* Use top 31 bits, masked to ensure < 2^31 */
+    apf_from_int(&numerator, (long)((r1 >> 1) & 0x7FFFFFFFUL));
+    apf_from_int(&denominator, 0x80000000L);     /* 2^31 */
     apf_div(r, &numerator, &denominator);
 }
 
@@ -164,8 +164,8 @@ void mat_rand(matrix_t *r, int rows, int cols)
     if (rows > MAT_MAX_ROWS) rows = MAT_MAX_ROWS;
     if (cols > MAT_MAX_COLS) cols = MAT_MAX_COLS;
     
-    r->rows = rows;
-    r->cols = cols;
+    mat_zero(r, rows, cols);
+    if (!r->data) return;
     
     for (i = 0; i < rows * cols; i++) {
         rand_uniform(&r->data[i]);
@@ -183,8 +183,8 @@ void mat_rand_range(matrix_t *r, int rows, int cols,
     if (rows > MAT_MAX_ROWS) rows = MAT_MAX_ROWS;
     if (cols > MAT_MAX_COLS) cols = MAT_MAX_COLS;
     
-    r->rows = rows;
-    r->cols = cols;
+    mat_zero(r, rows, cols);
+    if (!r->data) return;
     
     for (i = 0; i < rows * cols; i++) {
         rand_uniform_range(&r->data[i], low, high);
@@ -201,8 +201,8 @@ void mat_randn(matrix_t *r, int rows, int cols)
     if (rows > MAT_MAX_ROWS) rows = MAT_MAX_ROWS;
     if (cols > MAT_MAX_COLS) cols = MAT_MAX_COLS;
     
-    r->rows = rows;
-    r->cols = cols;
+    mat_zero(r, rows, cols);
+    if (!r->data) return;
     
     for (i = 0; i < rows * cols; i++) {
         rand_normal(&r->data[i]);
@@ -219,8 +219,8 @@ void mat_randi(matrix_t *r, int rows, int cols, long imax)
     if (rows > MAT_MAX_ROWS) rows = MAT_MAX_ROWS;
     if (cols > MAT_MAX_COLS) cols = MAT_MAX_COLS;
     
-    r->rows = rows;
-    r->cols = cols;
+    mat_zero(r, rows, cols);
+    if (!r->data) return;
     
     for (i = 0; i < rows * cols; i++) {
         rand_int(&r->data[i], imax);
@@ -237,8 +237,8 @@ void mat_randi_range(matrix_t *r, int rows, int cols, long imin, long imax)
     if (rows > MAT_MAX_ROWS) rows = MAT_MAX_ROWS;
     if (cols > MAT_MAX_COLS) cols = MAT_MAX_COLS;
     
-    r->rows = rows;
-    r->cols = cols;
+    mat_zero(r, rows, cols);
+    if (!r->data) return;
     
     for (i = 0; i < rows * cols; i++) {
         rand_int_range(&r->data[i], imin, imax);

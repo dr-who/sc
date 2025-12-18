@@ -74,7 +74,7 @@ void rand_int_range(apfc *r, long imin, long imax) { (void)imin; (void)imax; apf
 
 /* ========== Plot stubs (plot uses double, not available on DOS) ========== */
 
-int do_plot(const char *func_name, apf *xmin, apf *xmax) { (void)func_name; (void)xmin; (void)xmax; return 0; }
-int do_textplot(const char *func_name, apf *xmin, apf *xmax) { (void)func_name; (void)xmin; (void)xmax; return 0; }
+int do_plot(const char *expr, char var, apf *xmin, apf *xmax) { (void)expr; (void)var; (void)xmin; (void)xmax; return 0; }
+int do_textplot(const char *expr, char var, apf *xmin, apf *xmax) { (void)expr; (void)var; (void)xmin; (void)xmax; return 0; }
 
 #endif /* SCALC_MEDIUM || SCALC_TINY || SCALC_MINIMAL */

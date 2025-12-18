@@ -120,6 +120,7 @@
   /* #define HAVE_ROMAN 1 - not implemented */
   #define HAVE_LOOPS 1
   #define HAVE_SOLVER 1
+  #define HAVE_NAMED_VARS 1  /* Needed for multi-output matrix decompositions */
   /* Phase 2: Scientific functions */
   #define HAVE_GAMMA 1
   #define HAVE_ERF 1

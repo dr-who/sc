@@ -3,10 +3,24 @@
  */
 #include "sc.h"
 #include "help.h"
+#include "table.h"
+#include "scalar_funcs.h"
+#include "matrix_funcs.h"
+#include "decomp_funcs.h"
+#include <time.h>
+
+/* Timer for tic/toc */
+static clock_t tic_start = 0;
 
 /* Forward declaration for evaluating a single expression
  * Returns: 0 for success/true, 1 for boolean false */
 int eval_expr_line(const char *line, int quiet);
+
+/* Forward declaration for named matrix - needed for Watcom C */
+#ifdef HAVE_NAMED_VARS
+extern int set_named_matrix(const char *name, const matrix_t *val);
+extern int set_named_scalar(const char *name, const apfc *val);
+#endif
 
 /* Check if input is from a pipe/redirect (non-interactive) */
 static int is_pipe_input(void)
@@ -20,15 +34,74 @@ static int is_pipe_input(void)
 #endif
 }
 
+/* Parse memory size argument (e.g., "512M", "2G", "1024") */
+static size_t parse_mem_size(const char *s)
+{
+    size_t val = 0;
+    char suffix;
+    
+    while (*s >= '0' && *s <= '9') {
+        val = val * 10 + (*s - '0');
+        s++;
+    }
+    
+    suffix = *s;
+    if (suffix == 'G' || suffix == 'g') {
+        val *= 1024UL * 1024 * 1024;
+    } else if (suffix == 'M' || suffix == 'm') {
+        val *= 1024UL * 1024;
+    } else if (suffix == 'K' || suffix == 'k') {
+        val *= 1024UL;
+    } else if (suffix == '\0') {
+        /* Assume megabytes if no suffix */
+        val *= 1024UL * 1024;
+    }
+    
+    return val;
+}
+
 int main(int argc, char *argv[])
 {
     static char input[MAX_INPUT];
     int len;
     int interactive;
     int last_bool_result = 1;  /* Track last boolean result for exit code (1=true, 0=false) */
+    size_t arena_size = 0;     /* 0 = use default */
+    size_t persist_size = 0;   /* 0 = use default */
+    int arg_start = 1;
+
+    /* Parse memory options before other arguments */
+    while (arg_start < argc) {
+        if (strcmp(argv[arg_start], "-m") == 0 || strcmp(argv[arg_start], "--memory") == 0) {
+            if (arg_start + 1 < argc) {
+                arena_size = parse_mem_size(argv[arg_start + 1]);
+                persist_size = arena_size;  /* Use same size for both */
+                arg_start += 2;
+            } else {
+                fprintf(stderr, "Error: -m requires a size argument (e.g., 512M, 2G)\n");
+                return 1;
+            }
+        } else if (strncmp(argv[arg_start], "-m", 2) == 0) {
+            arena_size = parse_mem_size(argv[arg_start] + 2);
+            persist_size = arena_size;
+            arg_start++;
+        } else {
+            break;
+        }
+    }
+
+    /* Initialize matrix memory pools */
+    if (!mat_memory_init(arena_size, persist_size)) {
+        fprintf(stderr, "Error: Failed to initialize memory\n");
+        return 1;
+    }
 
     init_user_funcs();
     init_variables();
+    parser_init_temps();  /* Initialize parser static temporaries */
+    scalar_funcs_init();  /* Initialize scalar function dispatch table */
+    matrix_funcs_init();  /* Initialize matrix function dispatch table */
+    decomp_funcs_init();  /* Initialize decomposition function dispatch table */
     
     /* Initialize last_ans */
     last_ans.type = VAL_SCALAR;
@@ -37,16 +110,68 @@ int main(int argc, char *argv[])
     last_ans_valid = 0;
     
     /* Command-line expression: sc "1+2" or sc 1+2 */
-    if (argc > 1) {
+    if (arg_start < argc) {
         int i;
         int exit_code;
         static char expr[MAX_INPUT];
         expr[0] = '\0';
         
         /* Concatenate all arguments with spaces */
-        for (i = 1; i < argc; i++) {
-            if (i > 1) strcat(expr, " ");
+        for (i = arg_start; i < argc; i++) {
+            if (i > arg_start) strcat(expr, " ");
             strncat(expr, argv[i], MAX_INPUT - strlen(expr) - 2);
+        }
+        
+        /* Handle special commands from command line */
+        if (str_eq(expr, "help")) {
+            print_help();
+            mat_memory_free();
+            return 0;
+        }
+        if (str_starts(expr, "help ")) {
+            const char *fn = expr + 5;
+            while (*fn == ' ') fn++;
+            if (*fn) show_function_help(fn);
+            else print_help();
+            mat_memory_free();
+            return 0;
+        }
+        if (str_starts(expr, "demo ")) {
+            const char *fn = expr + 5;
+            while (*fn == ' ') fn++;
+            if (str_eq(fn, "fisheriris") || str_eq(fn, "iris")) {
+                extern void cmd_demo_fisheriris(void);
+                cmd_demo_fisheriris();
+            } else if (str_eq(fn, "saas") || str_eq(fn, "metrics")) {
+                extern void cmd_demo_saas(void);
+                cmd_demo_saas();
+            } else if (*fn) {
+                show_function_demo(fn);
+            }
+            return 0;
+        }
+        if (str_eq(expr, "functions") || str_eq(expr, "funcs")) {
+            extern void list_all_functions(void);
+            list_all_functions();
+            return 0;
+        }
+        if (str_eq(expr, "features")) {
+            extern void print_features(void);
+            print_features();
+            return 0;
+        }
+        if (str_eq(expr, "constants") || str_eq(expr, "consts")) {
+            extern void print_constants(void);
+            print_constants();
+            return 0;
+        }
+        if (str_eq(expr, "test")) {
+            run_tests();
+            return 0;
+        }
+        if (str_eq(expr, "bench")) {
+            run_bench();
+            return 0;
         }
         
         exit_code = eval_expr_line(expr, 1);  /* quiet=1: just print result, no "= " prefix */
@@ -67,13 +192,22 @@ int main(int argc, char *argv[])
             print_prompt();
             fflush(stdout);
         }
+        
+        
+        fflush(stderr);
 
         len = read_line(input, MAX_INPUT);
+        
+        
+        fflush(stderr);
         if (len < 0) { 
             if (interactive) printf("\n"); 
             break; 
         }
         if (input[0] == '\0') continue;
+
+        /* Reset matrix arena at start of each command */
+        mat_arena_reset();
 
         /* Commands */
         if (str_eq(input, "quit") || str_eq(input, "exit")) break;
@@ -88,12 +222,23 @@ int main(int argc, char *argv[])
         if (str_starts(input, "demo ")) {
             const char *fn = input + 5;
             while (*fn == ' ') fn++;
-            if (*fn) show_function_demo(fn);
+            if (str_eq(fn, "fisheriris") || str_eq(fn, "iris")) {
+                extern void cmd_demo_fisheriris(void);
+                cmd_demo_fisheriris();
+            } else if (str_eq(fn, "saas") || str_eq(fn, "metrics")) {
+                extern void cmd_demo_saas(void);
+                cmd_demo_saas();
+            } else if (*fn) {
+                show_function_demo(fn);
+            }
             continue;
         }
         if (str_eq(input, "test")) { run_tests(); continue; }
         if (str_eq(input, "bench")) { run_bench(); continue; }
-        if (str_starts(input, "mode")) { handle_mode(input); continue; }
+        /* mode command - but not mode() function */
+        if (str_starts(input, "mode") && (input[4] == '\0' || input[4] == ' ')) { 
+            handle_mode(input); continue; 
+        }
         
         /* Angle mode commands */
         if (str_eq(input, "deg") || str_eq(input, "degrees")) {
@@ -143,6 +288,33 @@ int main(int argc, char *argv[])
             continue;
         }
         
+        /* Format command: MATLAB-style format short/long */
+        if (str_starts(input, "format")) {
+            const char *arg = input + 6;
+            while (*arg == ' ') arg++;
+            if (*arg == '\0') {
+                /* Show current format */
+                if (display_digits == 4) {
+                    printf("Current format: short (4 decimal places)\n");
+                } else if (display_digits == 15) {
+                    printf("Current format: long (15 decimal places)\n");
+                } else {
+                    printf("Current format: %d digits\n", display_digits);
+                }
+                printf("Use: format short, format long, or digits N\n");
+            } else if (str_eq(arg, "short")) {
+                display_digits = 4;
+                printf("Format: short (4 decimal places)\n");
+            } else if (str_eq(arg, "long")) {
+                display_digits = 15;
+                printf("Format: long (15 decimal places)\n");
+            } else {
+                printf("Unknown format: %s\n", arg);
+                printf("Use: format short, format long\n");
+            }
+            continue;
+        }
+        
         /* Round command: set output rounding mode */
         /* Only match "round" alone or "round <mode>", not "round(x)" function */
         if (str_starts(input, "round") && (input[5] == '\0' || input[5] == ' ')) {
@@ -178,6 +350,47 @@ int main(int argc, char *argv[])
             continue;
         }
         
+        if (str_eq(input, "features")) {
+            extern void print_features(void);
+            print_features();
+            continue;
+        }
+        
+        /* MATLAB compatibility: clc (clear screen) and clear (clear variables) */
+        if (str_eq(input, "clc")) {
+            printf("\033[2J\033[H");  /* ANSI clear screen */
+            continue;
+        }
+        
+        /* tic/toc timing */
+        if (str_eq(input, "tic")) {
+            tic_start = clock();
+            continue;
+        }
+        
+        if (str_eq(input, "toc")) {
+            double elapsed = (double)(clock() - tic_start) / CLOCKS_PER_SEC;
+            printf("Elapsed time is %.6f seconds.\n", elapsed);
+            continue;
+        }
+        
+        /* ver - version info */
+        if (str_eq(input, "ver")) {
+            printf("sc - Scientific Calculator v1.0\n");
+            printf("Arbitrary precision floating point (128-bit default)\n");
+            printf("MATLAB-compatible syntax\n");
+            continue;
+        }
+        
+        if (str_eq(input, "clear")) {
+            int i;
+            extern void init_named_vars(void);
+            for (i = 0; i < MAX_SCALAR_VARS; i++) scalar_vars[i].defined = 0;
+            for (i = 0; i < MAX_MATRIX_VARS; i++) matrix_vars[i].defined = 0;
+            init_named_vars();
+            continue;
+        }
+        
         if (str_eq(input, "funcs") || str_eq(input, "functions")) {
             int i, count = 0;
             
@@ -199,6 +412,7 @@ int main(int argc, char *argv[])
         if (str_eq(input, "vars") || str_eq(input, "variables")) {
             int i, count = 0;
             static char vbuf[256];
+            extern named_var_t named_vars[];
             /* Show scalar variables */
             for (i = 0; i < MAX_SCALAR_VARS; i++) {
                 if (scalar_vars[i].defined) {
@@ -216,12 +430,645 @@ int main(int argc, char *argv[])
                     count++;
                 }
             }
+            /* Show named variables */
+            for (i = 0; i < MAX_NAMED_VARS; i++) {
+                if (named_vars[i].defined) {
+                    if (named_vars[i].type == VAL_SCALAR) {
+                        apfc_to_str(vbuf, sizeof(vbuf), &named_vars[i].val.scalar, display_digits);
+                        printf("  %s = %s\n", named_vars[i].name, vbuf);
+                    } else {
+                        printf("  %s = [%dx%d matrix]\n", named_vars[i].name,
+                               named_vars[i].val.matrix.rows,
+                               named_vars[i].val.matrix.cols);
+                    }
+                    count++;
+                }
+            }
             if (count == 0) printf("No variables defined.\n");
             continue;
         }
         
         if (str_eq(input, "date") || str_eq(input, "time")) {
             print_date_time();
+            continue;
+        }
+        
+        /* Dataset loading (MATLAB style) */
+        if (str_starts(input, "load ")) {
+            extern int cmd_csvread(const char *filename);
+            extern int cmd_load_dataset(const char *name);
+            const char *arg = input + 5;
+            char name[256];
+            int ni = 0;
+            
+            /* Skip whitespace */
+            while (*arg == ' ') arg++;
+            
+            /* Get argument */
+            while (*arg && *arg != ' ' && *arg != '\n' && *arg != '\r' && ni < 255) {
+                name[ni++] = *arg++;
+            }
+            name[ni] = '\0';
+            
+            if (ni == 0) {
+                printf("Usage: load <dataset>     - Load built-in dataset\n");
+                printf("       load filename.csv  - Load CSV file\n");
+                printf("\nBuilt-in datasets:\n");
+                printf("  fisheriris / iris  - 150 flowers, creates 'meas' and 'species'\n");
+                printf("  hald / cement      - 13 cement samples, creates 'X' and 'y'\n");
+                printf("  imports85 / auto   - 98 automobiles, creates 'auto' and 'price'\n");
+            } else {
+                cmd_load_dataset(name);
+            }
+            continue;
+        }
+        
+        /* Categorical array: varname = categorical(["str1"; "str2"; ...]) */
+        if (strstr(input, "= categorical(") || strstr(input, "=categorical(")) {
+            extern void cat_init(categorical_t *c);
+            extern int cat_add_element(categorical_t *c, const char *label);
+            extern int cat_store(const char *name, const categorical_t *c);
+            extern void cat_print(const categorical_t *c);
+            
+            const char *p = input;
+            char varname[64];
+            int vi = 0;
+            categorical_t cat;
+            
+            /* Get variable name */
+            while (*p && *p != '=' && vi < 63) {
+                if (*p != ' ') varname[vi++] = *p;
+                p++;
+            }
+            varname[vi] = '\0';
+            
+            /* Skip to ( */
+            while (*p && *p != '(') p++;
+            if (*p == '(') p++;
+            
+            /* Skip whitespace and [ or { */
+            while (*p == ' ' || *p == '[' || *p == '{') p++;
+            
+            cat_init(&cat);
+            
+            /* Parse string elements */
+            while (*p && *p != ']' && *p != '}' && *p != ')') {
+                if (*p == '"' || *p == '\'') {
+                    char delim = *p++;
+                    char label[MAX_CAT_LABEL];
+                    int li = 0;
+                    while (*p && *p != delim && li < MAX_CAT_LABEL - 1) {
+                        label[li++] = *p++;
+                    }
+                    label[li] = '\0';
+                    if (*p == delim) p++;
+                    cat_add_element(&cat, label);
+                }
+                /* Skip separators */
+                while (*p == ';' || *p == ',' || *p == ' ' || *p == '\n') p++;
+            }
+            
+            if (cat.num_elements > 0) {
+                cat_store(varname, &cat);
+                printf("Categorical '%s' with %d elements, %d categories\n", 
+                       varname, cat.num_elements, cat.num_categories);
+            } else {
+                printf("Error: no elements in categorical\n");
+            }
+            continue;
+        }
+        
+        /* Table creation: T = table(col1, col2, ...) */
+        if (strstr(input, "= table(") || strstr(input, "=table(")) {
+            extern void table_init(table_t *t);
+            extern int table_add_numeric_col(table_t *t, const char *name, const matrix_t *data);
+            extern int table_add_categorical_col(table_t *t, const char *name, const categorical_t *data);
+            extern void table_print(const table_t *t);
+            extern int table_store(const char *name, const table_t *t);
+            extern categorical_t *cat_get(const char *name);
+            
+            const char *p = input;
+            char tblname[64];
+            int ti = 0;
+            table_t tbl;
+            
+            /* Get table name */
+            while (*p && *p != '=' && ti < 63) {
+                if (*p != ' ') tblname[ti++] = *p;
+                p++;
+            }
+            tblname[ti] = '\0';
+            
+            /* Skip to ( */
+            while (*p && *p != '(') p++;
+            if (*p == '(') p++;
+            
+            table_init(&tbl);
+            
+            /* Parse column names */
+            while (*p && *p != ')') {
+                char colname[64];
+                int ci = 0;
+                value_t colval;
+                categorical_t *catcol;
+                
+                /* Skip whitespace */
+                while (*p == ' ' || *p == ',') p++;
+                if (*p == ')') break;
+                
+                /* Get column name */
+                while (*p && *p != ',' && *p != ')' && *p != ' ' && ci < 63) {
+                    colname[ci++] = *p++;
+                }
+                colname[ci] = '\0';
+                
+                if (ci == 0) break;
+                
+                /* Check if it's a categorical */
+                catcol = cat_get(colname);
+                if (catcol) {
+                    table_add_categorical_col(&tbl, colname, catcol);
+                } else {
+                    /* Try as numeric matrix variable */
+                    int found = 0;
+                    
+                    /* Try single-letter variable */
+                    if (strlen(colname) == 1 && colname[0] >= 'a' && colname[0] <= 'z') {
+                        if (get_var_value(colname[0] - 'a', &colval) && colval.type == VAL_MATRIX) {
+                            table_add_numeric_col(&tbl, colname, &colval.v.matrix);
+                            found = 1;
+                        }
+                    }
+                    
+                    /* Try named variable */
+                    if (!found && get_named_var(colname, &colval) && colval.type == VAL_MATRIX) {
+                        table_add_numeric_col(&tbl, colname, &colval.v.matrix);
+                        found = 1;
+                    }
+                    
+                    if (!found) {
+                        printf("Warning: column '%s' not found\n", colname);
+                    }
+                }
+            }
+            
+            if (tbl.num_cols > 0) {
+                printf("\n%s=%dx%d table\n", tblname, tbl.num_rows, tbl.num_cols);
+                table_print(&tbl);
+                table_store(tblname, &tbl);
+            }
+            continue;
+        }
+        
+        /* Print table by name */
+        {
+            table_t *tbl;
+            
+            fflush(stderr);
+            tbl = table_get(input);
+            
+            fflush(stderr);
+            if (tbl) {
+                printf("\n%dx%d table\n", tbl->num_rows, tbl->num_cols);
+                table_print(tbl);
+                continue;
+            }
+        }
+        
+        /* Print categorical by name */
+        {
+            categorical_t *cat;
+            
+            fflush(stderr);
+            cat = cat_get(input);
+            
+            fflush(stderr);
+            if (cat) {
+                cat_print(cat);
+                continue;
+            }
+        }
+        
+        /* Create timetable/table from column variables
+         * Syntax: timetable varname col1 col2 col3 ...
+         * Or:     table varname col1 col2 col3 ...
+         */
+        if (str_starts(input, "timetable ") || str_starts(input, "table ")) {
+            extern void table_init(table_t *t);
+            extern int table_add_numeric_col(table_t *, const char *, const matrix_t *);
+            extern int table_add_categorical_col(table_t *, const char *, const categorical_t *);
+            extern int table_store(const char *name, const table_t *t);
+            extern categorical_t *cat_get(const char *name);
+            extern int get_named_var(const char *name, value_t *val);
+            
+            table_t tbl;
+            const char *p = input + (str_starts(input, "timetable ") ? 10 : 6);
+            char tbl_name[32], col_name[32];
+            int ni = 0;
+            int col_count = 0;
+            
+            table_init(&tbl);
+            
+            /* Skip whitespace */
+            while (*p == ' ') p++;
+            
+            /* Get table name */
+            ni = 0;
+            while (*p && *p != ' ' && ni < 31) {
+                tbl_name[ni++] = *p++;
+            }
+            tbl_name[ni] = '\0';
+            
+            /* Parse column names */
+            while (*p) {
+                value_t col_val;
+                categorical_t *cat;
+                int var_idx;
+                
+                /* Skip whitespace */
+                while (*p == ' ') p++;
+                if (!*p) break;
+                
+                /* Get column name */
+                ni = 0;
+                while (*p && *p != ' ' && ni < 31) {
+                    col_name[ni++] = *p++;
+                }
+                col_name[ni] = '\0';
+                if (ni == 0) break;
+                
+                /* Look up variable - try single-letter matrix first */
+                var_idx = get_var_index(col_name);
+                if (var_idx >= 0 && is_var_matrix(var_idx)) {
+                    int mi;
+                    for (mi = 0; mi < MAX_MATRIX_VARS; mi++) {
+                        if (matrix_vars[mi].defined && matrix_vars[mi].name == 'a' + var_idx) {
+                            table_add_numeric_col(&tbl, col_name, &matrix_vars[mi].val);
+                            col_count++;
+                            break;
+                        }
+                    }
+                } else if (get_named_var(col_name, &col_val)) {
+                    if (col_val.type == VAL_MATRIX) {
+                        table_add_numeric_col(&tbl, col_name, &col_val.v.matrix);
+                        col_count++;
+                    }
+                } else if ((cat = cat_get(col_name)) != NULL) {
+                    table_add_categorical_col(&tbl, col_name, cat);
+                    col_count++;
+                } else {
+                    printf("Error: unknown variable '%s'\n", col_name);
+                    break;
+                }
+            }
+            
+            if (col_count > 0) {
+                table_store(tbl_name, &tbl);
+                printf("Created %s '%s' with %d columns, %d rows\n",
+                       str_starts(input, "timetable") ? "timetable" : "table",
+                       tbl_name, col_count, tbl.num_rows);
+            }
+            continue;
+        }
+        
+        /* groupsummary command: groupsummary result_table source_table group_col [bin] method data_col
+         * bin options: year, month, day, hour, minute, dayname (optional)
+         * Example: groupsummary result TT customerid min time
+         * Example: groupsummary MonthlyUsage TT time month sum usage
+         */
+        if (str_starts(input, "groupsummary ")) {
+            extern int table_groupsummary(table_t *result, const table_t *src,
+                                          const char *group_col, const char *method, const char *data_col);
+            extern int table_groupsummary_binned(table_t *result, const table_t *src,
+                                          const char *group_col, const char *bin_type,
+                                          const char *method, const char *data_col);
+            extern table_t *table_get(const char *name);
+            extern int table_store(const char *name, const table_t *t);
+            
+            const char *p = input + 13;
+            char result_name[32], src_name[32], group_col[32], token4[32], token5[32], token6[32];
+            char *method, *data_col, *bin_type;
+            int ni, has_bin = 0;
+            table_t *src_tbl;
+            table_t result_tbl;
+            
+            /* Parse tokens */
+            while (*p == ' ') p++;
+            ni = 0; while (*p && *p != ' ' && ni < 31) result_name[ni++] = *p++; result_name[ni] = '\0';
+            
+            while (*p == ' ') p++;
+            ni = 0; while (*p && *p != ' ' && ni < 31) src_name[ni++] = *p++; src_name[ni] = '\0';
+            
+            while (*p == ' ') p++;
+            ni = 0; while (*p && *p != ' ' && ni < 31) group_col[ni++] = *p++; group_col[ni] = '\0';
+            
+            while (*p == ' ') p++;
+            ni = 0; while (*p && *p != ' ' && ni < 31) token4[ni++] = *p++; token4[ni] = '\0';
+            
+            while (*p == ' ') p++;
+            ni = 0; while (*p && *p != ' ' && ni < 31) token5[ni++] = *p++; token5[ni] = '\0';
+            
+            while (*p == ' ') p++;
+            ni = 0; while (*p && *p != ' ' && ni < 31) token6[ni++] = *p++; token6[ni] = '\0';
+            
+            /* Check if token4 is a binning keyword */
+            if (str_eq(token4, "year") || str_eq(token4, "month") || str_eq(token4, "day") ||
+                str_eq(token4, "hour") || str_eq(token4, "minute") || str_eq(token4, "dayname") ||
+                str_eq(token4, "week") || str_eq(token4, "quarter")) {
+                has_bin = 1;
+                bin_type = token4;
+                method = token5;
+                data_col = token6;
+            } else {
+                has_bin = 0;
+                method = token4;
+                data_col = token5;
+                bin_type = NULL;
+            }
+            
+            src_tbl = table_get(src_name);
+            if (!src_tbl) {
+                printf("Error: table '%s' not found\n", src_name);
+                continue;
+            }
+            
+            if (has_bin) {
+                if (table_groupsummary_binned(&result_tbl, src_tbl, group_col, bin_type, method, data_col)) {
+                    table_store(result_name, &result_tbl);
+                    printf("Created summary '%s' with %d groups\n", result_name, result_tbl.num_rows);
+                }
+            } else {
+                if (table_groupsummary(&result_tbl, src_tbl, group_col, method, data_col)) {
+                    table_store(result_name, &result_tbl);
+                    printf("Created summary '%s' with %d groups\n", result_name, result_tbl.num_rows);
+                }
+            }
+            continue;
+        }
+        
+        /* sortrows table_name - sort table by first column */
+        if (str_starts(input, "sortrows ")) {
+            extern table_t *table_get(const char *name);
+            extern int table_sortrows(table_t *t);
+            const char *p = input + 9;
+            char tbl_name[32];
+            int ni = 0;
+            table_t *tbl;
+            
+            while (*p == ' ') p++;
+            while (*p && *p != ' ' && ni < 31) tbl_name[ni++] = *p++;
+            tbl_name[ni] = '\0';
+            
+            tbl = table_get(tbl_name);
+            if (tbl) {
+                table_sortrows(tbl);
+                printf("Sorted table '%s' by first column\n", tbl_name);
+            } else {
+                printf("Error: table '%s' not found\n", tbl_name);
+            }
+            continue;
+        }
+        
+        
+        /* head table_name [n] - show first n rows (default 5) */
+        if (str_starts(input, "head ")) {
+            extern table_t *table_get(const char *name);
+            extern void table_print_rows(const table_t *t, int start, int count);
+            const char *p = input + 5;
+            char tbl_name[32];
+            int ni = 0, n = 5;
+            table_t *tbl;
+            
+            while (*p == ' ') p++;
+            while (*p && *p != ' ' && ni < 31) tbl_name[ni++] = *p++;
+            tbl_name[ni] = '\0';
+            
+            while (*p == ' ') p++;
+            if (*p >= '0' && *p <= '9') {
+                n = 0;
+                while (*p >= '0' && *p <= '9') n = n * 10 + (*p++ - '0');
+            }
+            
+            tbl = table_get(tbl_name);
+            if (tbl) {
+                table_print_rows(tbl, 0, n);
+            } else {
+                printf("Error: table '%s' not found\n", tbl_name);
+            }
+            continue;
+        }
+        
+        /* tail table_name [n] - show last n rows (default 5) */
+        if (str_starts(input, "tail ")) {
+            extern table_t *table_get(const char *name);
+            extern void table_print_rows(const table_t *t, int start, int count);
+            extern int table_height(const table_t *t);
+            const char *p = input + 5;
+            char tbl_name[32];
+            int ni = 0, n = 5, h, start;
+            table_t *tbl;
+            
+            while (*p == ' ') p++;
+            while (*p && *p != ' ' && ni < 31) tbl_name[ni++] = *p++;
+            tbl_name[ni] = '\0';
+            
+            while (*p == ' ') p++;
+            if (*p >= '0' && *p <= '9') {
+                n = 0;
+                while (*p >= '0' && *p <= '9') n = n * 10 + (*p++ - '0');
+            }
+            
+            tbl = table_get(tbl_name);
+            if (tbl) {
+                h = table_height(tbl);
+                start = h - n;
+                if (start < 0) start = 0;
+                table_print_rows(tbl, start, n);
+            } else {
+                printf("Error: table '%s' not found\n", tbl_name);
+            }
+            continue;
+        }
+        
+        /* groupcounts result_name table_name col_name - count by group */
+        if (str_starts(input, "groupcounts ")) {
+            extern table_t *table_get(const char *name);
+            extern int table_groupsummary(table_t *result, const table_t *src,
+                                          const char *group_col, const char *method, const char *data_col);
+            extern int table_store(const char *name, const table_t *t);
+            const char *p = input + 12;
+            char result_name[32], src_name[32], group_col[32];
+            int ni;
+            table_t *src_tbl;
+            table_t result_tbl;
+            
+            while (*p == ' ') p++;
+            ni = 0; while (*p && *p != ' ' && ni < 31) result_name[ni++] = *p++; result_name[ni] = '\0';
+            
+            while (*p == ' ') p++;
+            ni = 0; while (*p && *p != ' ' && ni < 31) src_name[ni++] = *p++; src_name[ni] = '\0';
+            
+            while (*p == ' ') p++;
+            ni = 0; while (*p && *p != ' ' && ni < 31) group_col[ni++] = *p++; group_col[ni] = '\0';
+            
+            src_tbl = table_get(src_name);
+            if (!src_tbl) {
+                printf("Error: table '%s' not found\n", src_name);
+                continue;
+            }
+            
+            /* Use numel as the method, data_col same as group_col */
+            if (table_groupsummary(&result_tbl, src_tbl, group_col, "numel", group_col)) {
+                table_store(result_name, &result_tbl);
+                printf("Created count table '%s' with %d groups\n", result_name, result_tbl.num_rows);
+            }
+            continue;
+        }
+        /* fprintf - formatted print (simplified, handles %d, %s, %f placeholders) */
+        if (str_starts(input, "fprintf(")) {
+            const char *p = input + 8;
+            char fmt[256];
+            int fi = 0;
+            
+            /* Skip to format string */
+            while (*p == ' ' || *p == '"') p++;
+            
+            /* Copy format string */
+            while (*p && *p != '"' && fi < 255) {
+                if (*p == '\\' && *(p+1) == 'n') {
+                    fmt[fi++] = '\n';
+                    p += 2;
+                } else if (*p == '\\' && *(p+1) == 't') {
+                    fmt[fi++] = '\t';
+                    p++;
+                } else {
+                    fmt[fi++] = *p++;
+                }
+            }
+            fmt[fi] = '\0';
+            if (*p == '"') p++;
+            
+            /* Simple printf with no args for now */
+            printf("%s", fmt);
+            continue;
+        }
+        
+        /* height(table) - get table row count */
+        if (str_starts(input, "height(")) {
+            extern table_t *table_get(const char *name);
+            extern int table_height(const table_t *t);
+            const char *p = input + 7;
+            char tbl_name[32];
+            int ni = 0;
+            table_t *tbl;
+            
+            while (*p && *p != ')' && ni < 31) tbl_name[ni++] = *p++;
+            tbl_name[ni] = '\0';
+            
+            tbl = table_get(tbl_name);
+            if (tbl) {
+                printf("%d\n", table_height(tbl));
+            } else {
+                /* Fall through to expression parsing */
+            }
+            if (tbl) continue;
+        }
+        
+        /* Retime command: retime(times, data, step_seconds, method)
+         * method: 0=linear, 1=spline, 2=mean
+         */
+        if (str_starts(input, "retime ")) {
+            extern int timetable_retime(matrix_t*, matrix_t*, const matrix_t*, const matrix_t*,
+                                        const char*, const char*);
+            
+            const char *arg = input + 7;
+            char time_var[64], data_var[64], step_str[64], method_str[64];
+            int ai = 0;
+            value_t time_val, data_val;
+            matrix_t new_times = {0, 0, NULL};
+            matrix_t new_data = {0, 0, NULL};
+            
+            /* Skip whitespace */
+            while (*arg == ' ') arg++;
+            
+            /* Parse: times_var data_var step method */
+            while (*arg && *arg != ' ' && ai < 63) time_var[ai++] = *arg++;
+            time_var[ai] = '\0';
+            
+            while (*arg == ' ') arg++;
+            ai = 0;
+            while (*arg && *arg != ' ' && ai < 63) data_var[ai++] = *arg++;
+            data_var[ai] = '\0';
+            
+            while (*arg == ' ') arg++;
+            ai = 0;
+            while (*arg && *arg != ' ' && ai < 63) step_str[ai++] = *arg++;
+            step_str[ai] = '\0';
+            
+            while (*arg == ' ') arg++;
+            ai = 0;
+            while (*arg && *arg != ' ' && ai < 63) method_str[ai++] = *arg++;
+            method_str[ai] = '\0';
+            
+            if (time_var[0] == '\0' || data_var[0] == '\0') {
+                printf("Usage: retime times_var data_var [step] [method]\n");
+                printf("  step: hourly, minutely, secondly, daily, or seconds (default: hourly)\n");
+                printf("  method: linear, spline, mean (default: linear)\n");
+                printf("Example: retime t temp hourly linear\n");
+                continue;
+            }
+            
+            /* Default values */
+            if (step_str[0] == '\0') strcpy(step_str, "hourly");
+            if (method_str[0] == '\0') strcpy(method_str, "linear");
+            
+            /* Get variables - check both single-char and named var systems */
+            {
+                int found_time = 0, found_data = 0;
+                
+                /* Try single-letter variable first if applicable */
+                if (strlen(time_var) == 1 && time_var[0] >= 'a' && time_var[0] <= 'z') {
+                    extern int get_var_value(int idx, value_t *val);
+                    if (get_var_value(time_var[0] - 'a', &time_val) && time_val.type == VAL_MATRIX) {
+                        found_time = 1;
+                    }
+                }
+                /* Try named variable system */
+                if (!found_time && get_named_var(time_var, &time_val) && time_val.type == VAL_MATRIX) {
+                    found_time = 1;
+                }
+                if (!found_time) {
+                    printf("Error: variable '%s' not found or not a matrix\n", time_var);
+                    continue;
+                }
+                
+                /* Same for data variable */
+                if (strlen(data_var) == 1 && data_var[0] >= 'a' && data_var[0] <= 'z') {
+                    extern int get_var_value(int idx, value_t *val);
+                    if (get_var_value(data_var[0] - 'a', &data_val) && data_val.type == VAL_MATRIX) {
+                        found_data = 1;
+                    }
+                }
+                if (!found_data && get_named_var(data_var, &data_val) && data_val.type == VAL_MATRIX) {
+                    found_data = 1;
+                }
+                if (!found_data) {
+                    printf("Error: variable '%s' not found or not a matrix\n", data_var);
+                    continue;
+                }
+            }
+            
+            /* Call retime */
+            if (timetable_retime(&new_times, &new_data, 
+                                &time_val.v.matrix, &data_val.v.matrix,
+                                step_str, method_str)) {
+                /* Store results */
+                set_named_matrix("rt_times", &new_times);
+                set_named_matrix("rt_data", &new_data);
+                printf("Created rt_times (%dx%d) and rt_data (%dx%d)\n",
+                       new_times.rows, new_times.cols,
+                       new_data.rows, new_data.cols);
+            }
             continue;
         }
         
@@ -323,11 +1170,13 @@ int main(int argc, char *argv[])
 #endif
 
 #ifdef HAVE_NEWTON
-        /* Newton-Raphson solver */
-        if (str_starts(input, "root ") || str_starts(input, "nsolve ")) {
+        /* Newton-Raphson solver (fzero is MATLAB alias) */
+        if (str_starts(input, "root ") || str_starts(input, "nsolve ") || str_starts(input, "fzero ")) {
             extern void cmd_newton(const char *args);
             const char *p = input;
-            if (*p == 'r') p += 5; else p += 7;
+            if (*p == 'r') p += 5;
+            else if (*p == 'n') p += 7;
+            else p += 6;  /* fzero */
             cmd_newton(p);
             continue;
         }
@@ -593,7 +1442,7 @@ int main(int argc, char *argv[])
             
 #ifdef HAVE_CONIO
             if (text_mode) {
-                do_textplot(expr_buf, &xmin, &xmax);
+                do_textplot(expr_buf, 'x', &xmin, &xmax);
             } else {
                 do_plot(expr_buf, 'x', &xmin, &xmax);
             }
@@ -642,7 +1491,10 @@ int main(int argc, char *argv[])
 
         /* Parse and evaluate expression(s) */
         input_ptr = input;
+        fflush(stderr);
         next_token();
+        fflush(stderr);
+        
 
         /* Check for for loop: for v in start:end; body; end */
         if (current_token.type == TOK_FOR) {
@@ -767,7 +1619,7 @@ int main(int argc, char *argv[])
                     
                     /* Handle assignment or expression (including 'i' which is TOK_IMAG) */
                     if (current_token.type == TOK_FUNC || current_token.type == TOK_IMAG) {
-                        char var_name[16];
+                        char var_name[32];
                         int vidx;
                         const char *saved = input_ptr;
                         token_t saved_tok = current_token;
@@ -775,7 +1627,7 @@ int main(int argc, char *argv[])
                         if (current_token.type == TOK_IMAG) {
                             strcpy(var_name, "i");
                         } else {
-                            strcpy(var_name, current_token.func_name);
+                            { int _l = 0; while(_l < 31 && current_token.func_name[_l]) { var_name[_l] = current_token.func_name[_l]; _l++; } var_name[_l] = '\0'; }
                         }
                         vidx = get_var_index(var_name);
                         next_token();
@@ -817,6 +1669,12 @@ int main(int argc, char *argv[])
             apf_zero(&last_result.v.scalar.im);
             
             while (!done) {
+                /* Handle empty lines or comment-only lines */
+                if (current_token.type == TOK_END) {
+                    done = 1;
+                    continue;
+                }
+                
                 /* Handle multi-value assignment: [A,B,C] = func(x) */
                 if (current_token.type == TOK_LBRACKET) {
                     char mvnames[8][32]; int mvidx[8]; int mvnum = 0;
@@ -824,7 +1682,7 @@ int main(int argc, char *argv[])
                     int ismv = 0;
                     next_token();
                     while (mvnum < 8 && current_token.type != TOK_RBRACKET && current_token.type != TOK_END) {
-                        if (current_token.type == TOK_FUNC) { strcpy(mvnames[mvnum], current_token.func_name); mvidx[mvnum] = get_var_index(mvnames[mvnum]); mvnum++; }
+                        if (current_token.type == TOK_FUNC) { int _l = 0; while(_l < 31 && current_token.func_name[_l]) { mvnames[mvnum][_l] = current_token.func_name[_l]; _l++; } mvnames[mvnum][_l] = '\0'; mvidx[mvnum] = get_var_index(mvnames[mvnum]); mvnum++; }
                         else if (current_token.type == TOK_IMAG) { strcpy(mvnames[mvnum], "i"); mvidx[mvnum] = get_var_index("i"); mvnum++; }
                         else break;
                         next_token(); if (current_token.type == TOK_COMMA) next_token();
@@ -835,71 +1693,58 @@ int main(int argc, char *argv[])
                         if (current_token.type == TOK_FUNC) {
                             char fn[32]; strcpy(fn, current_token.func_name); next_token();
                             if (current_token.type == TOK_LPAREN) {
+                                DecompFuncEntry *dfe = decomp_func_lookup(fn);
                                 next_token();
-                                if (strcmp(fn, "svd") == 0 && mvnum == 3) {
-                                    value_t arg; matrix_t U, S, V;
-                                    if (parse_value(&arg) && current_token.type == TOK_RPAREN) { next_token();
-                                        if (arg.type != VAL_MATRIX) { mat_zero(&arg.v.matrix, 1, 1); MAT_AT(&arg.v.matrix, 0, 0) = arg.v.scalar; }
-                                        if (mat_svd(&U, &S, &V, &arg.v.matrix)) {
-                                            value_t v; v.type = VAL_MATRIX;
-                                            mat_copy(&v.v.matrix, &U); if (mvidx[0] >= 0) set_var_value(mvidx[0], &v); else set_named_matrix(mvnames[0], &v.v.matrix);
-                                            mat_copy(&v.v.matrix, &S); if (mvidx[1] >= 0) set_var_value(mvidx[1], &v); else set_named_matrix(mvnames[1], &v.v.matrix);
-                                            mat_copy(&v.v.matrix, &V); if (mvidx[2] >= 0) set_var_value(mvidx[2], &v); else set_named_matrix(mvnames[2], &v.v.matrix);
-                                            has_result = 0;
-                                        } else { printf("Error: SVD failed\n"); done = 1; }
-                                    } else { printf("Error: svd syntax\n"); done = 1; }
-                                } else if (strcmp(fn, "qr") == 0 && mvnum == 2) {
-                                    value_t arg; matrix_t Q, R;
-                                    if (parse_value(&arg) && current_token.type == TOK_RPAREN) { next_token();
-                                        if (arg.type != VAL_MATRIX) { mat_zero(&arg.v.matrix, 1, 1); MAT_AT(&arg.v.matrix, 0, 0) = arg.v.scalar; }
-                                        if (mat_qr(&Q, &R, &arg.v.matrix)) {
-                                            value_t v; v.type = VAL_MATRIX;
-                                            mat_copy(&v.v.matrix, &Q); if (mvidx[0] >= 0) set_var_value(mvidx[0], &v); else set_named_matrix(mvnames[0], &v.v.matrix);
-                                            mat_copy(&v.v.matrix, &R); if (mvidx[1] >= 0) set_var_value(mvidx[1], &v); else set_named_matrix(mvnames[1], &v.v.matrix);
-                                            has_result = 0;
-                                        } else { printf("Error: QR failed\n"); done = 1; }
-                                    } else { printf("Error: qr syntax\n"); done = 1; }
-                                } else if (strcmp(fn, "lu") == 0 && mvnum >= 2) {
-                                    value_t arg; matrix_t L, Um; int perm[MAT_MAX_ROWS];
-                                    if (parse_value(&arg) && current_token.type == TOK_RPAREN) { next_token();
-                                        if (arg.type != VAL_MATRIX) { mat_zero(&arg.v.matrix, 1, 1); MAT_AT(&arg.v.matrix, 0, 0) = arg.v.scalar; }
-                                        if (mat_lu(&L, &Um, perm, &arg.v.matrix)) {
-                                            value_t v; int ii; v.type = VAL_MATRIX;
-                                            mat_copy(&v.v.matrix, &L); if (mvidx[0] >= 0) set_var_value(mvidx[0], &v); else set_named_matrix(mvnames[0], &v.v.matrix);
-                                            mat_copy(&v.v.matrix, &Um); if (mvidx[1] >= 0) set_var_value(mvidx[1], &v); else set_named_matrix(mvnames[1], &v.v.matrix);
-                                            if (mvnum == 3) { int nn = arg.v.matrix.rows; mat_zero(&v.v.matrix, nn, nn);
-                                                for (ii = 0; ii < nn; ii++) apf_from_int(&MAT_AT(&v.v.matrix, ii, perm[ii]).re, 1);
-                                                if (mvidx[2] >= 0) set_var_value(mvidx[2], &v); else set_named_matrix(mvnames[2], &v.v.matrix); }
-                                            has_result = 0;
-                                        } else { printf("Error: LU failed\n"); done = 1; }
-                                    } else { printf("Error: lu syntax\n"); done = 1; }
-                                } else if (strcmp(fn, "pca") == 0 && mvnum == 3) {
-                                    value_t arg; matrix_t coeff, score, latent;
-                                    if (parse_value(&arg) && current_token.type == TOK_RPAREN) { next_token();
-                                        if (arg.type != VAL_MATRIX) { printf("Error: pca requires matrix\n"); done = 1; }
-                                        else if (mat_pca(&coeff, &score, &latent, &arg.v.matrix)) {
-                                            value_t v; v.type = VAL_MATRIX;
-                                            mat_copy(&v.v.matrix, &coeff); if (mvidx[0] >= 0) set_var_value(mvidx[0], &v); else set_named_matrix(mvnames[0], &v.v.matrix);
-                                            mat_copy(&v.v.matrix, &score); if (mvidx[1] >= 0) set_var_value(mvidx[1], &v); else set_named_matrix(mvnames[1], &v.v.matrix);
-                                            mat_copy(&v.v.matrix, &latent); if (mvidx[2] >= 0) set_var_value(mvidx[2], &v); else set_named_matrix(mvnames[2], &v.v.matrix);
-                                            has_result = 0;
-                                        } else { printf("Error: PCA failed\n"); done = 1; }
-                                    } else { printf("Error: pca syntax\n"); done = 1; }
-                                } else if (strcmp(fn, "kmeans") == 0 && mvnum == 2) {
-                                    value_t arg, karg; matrix_t idx_m, cent; int k;
-                                    if (parse_value(&arg) && current_token.type == TOK_COMMA) { next_token();
-                                        if (parse_value(&karg) && current_token.type == TOK_RPAREN) { next_token();
-                                            if (arg.type != VAL_MATRIX) { printf("Error: kmeans requires matrix\n"); done = 1; }
-                                            else { k = (karg.type == VAL_SCALAR) ? apf_to_long(&karg.v.scalar.re) : 2;
-                                                if (mat_kmeans(&idx_m, &cent, &arg.v.matrix, k)) {
-                                                    value_t v; v.type = VAL_MATRIX;
-                                                    mat_copy(&v.v.matrix, &idx_m); if (mvidx[0] >= 0) set_var_value(mvidx[0], &v); else set_named_matrix(mvnames[0], &v.v.matrix);
-                                                    mat_copy(&v.v.matrix, &cent); if (mvidx[1] >= 0) set_var_value(mvidx[1], &v); else set_named_matrix(mvnames[1], &v.v.matrix);
-                                                    has_result = 0;
-                                                } else { printf("Error: kmeans failed\n"); done = 1; } }
-                                        } else { printf("Error: kmeans(X,k) syntax\n"); done = 1; }
-                                    } else { printf("Error: kmeans(X,k) syntax\n"); done = 1; }
-                                } else { printf("Error: unknown [a,b]=func '%s' with %d outputs\n", fn, mvnum); done = 1; }
+                                if (dfe) {
+                                    /* Use decomposition dispatch */
+                                    value_t arg, arg2;
+                                    DecompResult dresult;
+                                    matrix_t *input2 = NULL;
+                                    int i;
+                                    
+                                    if (!parse_value(&arg)) { done = 1; continue; }
+                                    
+                                    /* Check for second argument (e.g., kmeans(X, k)) */
+                                    if (current_token.type == TOK_COMMA) {
+                                        next_token();
+                                        if (!parse_value(&arg2)) { done = 1; continue; }
+                                        if (arg2.type == VAL_SCALAR) {
+                                            mat_zero(&arg2.v.matrix, 1, 1);
+                                            MAT_AT(&arg2.v.matrix, 0, 0) = arg2.v.scalar;
+                                        }
+                                        input2 = &arg2.v.matrix;
+                                    }
+                                    
+                                    if (current_token.type != TOK_RPAREN) {
+                                        printf("Error: expected ')'\n");
+                                        done = 1; continue;
+                                    }
+                                    next_token();
+                                    
+                                    /* Ensure input is matrix */
+                                    if (arg.type == VAL_SCALAR) {
+                                        mat_zero(&arg.v.matrix, 1, 1);
+                                        MAT_AT(&arg.v.matrix, 0, 0) = arg.v.scalar;
+                                    }
+                                    
+                                    /* Execute decomposition */
+                                    if (decomp_func_exec(fn, mvnum, &dresult, &arg.v.matrix, input2)) {
+                                        value_t v; v.type = VAL_MATRIX;
+                                        for (i = 0; i < dresult.num_outputs && i < mvnum; i++) {
+                                            mat_copy(&v.v.matrix, &dresult.outputs[i]);
+                                            if (mvidx[i] >= 0) set_var_value(mvidx[i], &v);
+                                            else set_named_matrix(mvnames[i], &v.v.matrix);
+                                        }
+                                        has_result = 0;
+                                    } else {
+                                        printf("Error: %s decomposition failed\n", fn);
+                                        done = 1;
+                                    }
+                                } else {
+                                    /* Legacy fallback for unsupported functions */
+                                    printf("Error: unknown [a,b]=func '%s' with %d outputs\n", fn, mvnum);
+                                    done = 1;
+                                }
                             } else { printf("Error: expected '('\n"); done = 1; }
                         } else { printf("Error: expected function\n"); done = 1; }
                         if (!done) { if (current_token.type == TOK_SEMI) { next_token(); if (current_token.type == TOK_END) done = 1; } else if (current_token.type == TOK_END) done = 1; }
@@ -908,7 +1753,7 @@ int main(int argc, char *argv[])
                 }
                 /* Check for variable assignment: x = expr (including 'i' which is TOK_IMAG) */
                 if (current_token.type == TOK_FUNC || current_token.type == TOK_IMAG) {
-                    char var_name[16];
+                    char var_name[32];
                     int var_idx;
                     const char *saved_pos = input_ptr;
                     token_t saved_tok = current_token;
@@ -916,13 +1761,13 @@ int main(int argc, char *argv[])
                     if (current_token.type == TOK_IMAG) {
                         strcpy(var_name, "i");
                     } else {
-                        strcpy(var_name, current_token.func_name);
+                        { int _l = 0; while(_l < 31 && current_token.func_name[_l]) { var_name[_l] = current_token.func_name[_l]; _l++; } var_name[_l] = '\0'; }
                     }
                     var_idx = get_var_index(var_name);
                     
                     next_token();
-                    if (var_idx >= 0 && current_token.type == TOK_ASSIGN) {
-                        /* Check if this is assignment or equality check */
+                    if (current_token.type == TOK_ASSIGN) {
+                        /* Assignment to variable (single-letter or named) */
                         next_token();
                         if (current_token.type == TOK_END || current_token.type == TOK_SEMI) {
                             /* Just "x =" with nothing after - error */
@@ -936,13 +1781,23 @@ int main(int argc, char *argv[])
                             done = 1;
                             continue;
                         }
-                        set_var_value(var_idx, &last_result);
+                        if (var_idx >= 0) {
+                            set_var_value(var_idx, &last_result);
+                        } else {
+                            /* Named variable assignment */
+                            if (last_result.type == VAL_MATRIX) {
+                                set_named_matrix(var_name, &last_result.v.matrix);
+                            } else {
+                                set_named_scalar(var_name, &last_result.v.scalar);
+                            }
+                        }
                         has_result = 1;
                     } else {
                         /* Not an assignment, restore and parse as expression */
                         int leading_not = 0;
                         input_ptr = saved_pos;
                         current_token = saved_tok;
+                        
                         /* Track leading 'not' - will apply after comparison */
                         while (current_token.type == TOK_NOT) {
                             leading_not = !leading_not;
@@ -952,6 +1807,7 @@ int main(int argc, char *argv[])
                             done = 1;
                             continue;
                         }
+                        
                         has_result = 1;
                         
                         /* Handle comparison: after value, check for comparison operator */
@@ -1331,6 +2187,12 @@ int eval_expr_line(const char *line, int quiet)
     next_token();
     
     while (!done) {
+        /* Handle empty lines or comment-only lines */
+        if (current_token.type == TOK_END) {
+            done = 1;
+            continue;
+        }
+        
         /* Handle multi-value assignment: [A,B,C] = func(x) */
         if (current_token.type == TOK_LBRACKET) {
             char mvnames[8][32]; int mvidx[8]; int mvnum = 0;
@@ -1338,7 +2200,7 @@ int eval_expr_line(const char *line, int quiet)
             int ismv = 0;
             next_token();
             while (mvnum < 8 && current_token.type != TOK_RBRACKET && current_token.type != TOK_END) {
-                if (current_token.type == TOK_FUNC) { strcpy(mvnames[mvnum], current_token.func_name); mvidx[mvnum] = get_var_index(mvnames[mvnum]); mvnum++; }
+                if (current_token.type == TOK_FUNC) { int _l = 0; while(_l < 31 && current_token.func_name[_l]) { mvnames[mvnum][_l] = current_token.func_name[_l]; _l++; } mvnames[mvnum][_l] = '\0'; mvidx[mvnum] = get_var_index(mvnames[mvnum]); mvnum++; }
                 else if (current_token.type == TOK_IMAG) { strcpy(mvnames[mvnum], "i"); mvidx[mvnum] = get_var_index("i"); mvnum++; }
                 else break;
                 next_token(); if (current_token.type == TOK_COMMA) next_token();
@@ -1349,71 +2211,58 @@ int eval_expr_line(const char *line, int quiet)
                 if (current_token.type == TOK_FUNC) {
                     char fn[32]; strcpy(fn, current_token.func_name); next_token();
                     if (current_token.type == TOK_LPAREN) {
+                        DecompFuncEntry *dfe = decomp_func_lookup(fn);
                         next_token();
-                        if (strcmp(fn, "svd") == 0 && mvnum == 3) {
-                            value_t arg; matrix_t U, S, V;
-                            if (parse_value(&arg) && current_token.type == TOK_RPAREN) { next_token();
-                                if (arg.type != VAL_MATRIX) { mat_zero(&arg.v.matrix, 1, 1); MAT_AT(&arg.v.matrix, 0, 0) = arg.v.scalar; }
-                                if (mat_svd(&U, &S, &V, &arg.v.matrix)) {
-                                    value_t v; v.type = VAL_MATRIX;
-                                    mat_copy(&v.v.matrix, &U); if (mvidx[0] >= 0) set_var_value(mvidx[0], &v); else set_named_matrix(mvnames[0], &v.v.matrix);
-                                    mat_copy(&v.v.matrix, &S); if (mvidx[1] >= 0) set_var_value(mvidx[1], &v); else set_named_matrix(mvnames[1], &v.v.matrix);
-                                    mat_copy(&v.v.matrix, &V); if (mvidx[2] >= 0) set_var_value(mvidx[2], &v); else set_named_matrix(mvnames[2], &v.v.matrix);
-                                    has_result = 0;
-                                } else { printf("Error: SVD failed\n"); done = 1; }
-                            } else { printf("Error: svd syntax\n"); done = 1; }
-                        } else if (strcmp(fn, "qr") == 0 && mvnum == 2) {
-                            value_t arg; matrix_t Q, R;
-                            if (parse_value(&arg) && current_token.type == TOK_RPAREN) { next_token();
-                                if (arg.type != VAL_MATRIX) { mat_zero(&arg.v.matrix, 1, 1); MAT_AT(&arg.v.matrix, 0, 0) = arg.v.scalar; }
-                                if (mat_qr(&Q, &R, &arg.v.matrix)) {
-                                    value_t v; v.type = VAL_MATRIX;
-                                    mat_copy(&v.v.matrix, &Q); if (mvidx[0] >= 0) set_var_value(mvidx[0], &v); else set_named_matrix(mvnames[0], &v.v.matrix);
-                                    mat_copy(&v.v.matrix, &R); if (mvidx[1] >= 0) set_var_value(mvidx[1], &v); else set_named_matrix(mvnames[1], &v.v.matrix);
-                                    has_result = 0;
-                                } else { printf("Error: QR failed\n"); done = 1; }
-                            } else { printf("Error: qr syntax\n"); done = 1; }
-                        } else if (strcmp(fn, "lu") == 0 && mvnum >= 2) {
-                            value_t arg; matrix_t L, Um; int perm[MAT_MAX_ROWS];
-                            if (parse_value(&arg) && current_token.type == TOK_RPAREN) { next_token();
-                                if (arg.type != VAL_MATRIX) { mat_zero(&arg.v.matrix, 1, 1); MAT_AT(&arg.v.matrix, 0, 0) = arg.v.scalar; }
-                                if (mat_lu(&L, &Um, perm, &arg.v.matrix)) {
-                                    value_t v; int ii; v.type = VAL_MATRIX;
-                                    mat_copy(&v.v.matrix, &L); if (mvidx[0] >= 0) set_var_value(mvidx[0], &v); else set_named_matrix(mvnames[0], &v.v.matrix);
-                                    mat_copy(&v.v.matrix, &Um); if (mvidx[1] >= 0) set_var_value(mvidx[1], &v); else set_named_matrix(mvnames[1], &v.v.matrix);
-                                    if (mvnum == 3) { int nn = arg.v.matrix.rows; mat_zero(&v.v.matrix, nn, nn);
-                                        for (ii = 0; ii < nn; ii++) apf_from_int(&MAT_AT(&v.v.matrix, ii, perm[ii]).re, 1);
-                                        if (mvidx[2] >= 0) set_var_value(mvidx[2], &v); else set_named_matrix(mvnames[2], &v.v.matrix); }
-                                    has_result = 0;
-                                } else { printf("Error: LU failed\n"); done = 1; }
-                            } else { printf("Error: lu syntax\n"); done = 1; }
-                        } else if (strcmp(fn, "pca") == 0 && mvnum == 3) {
-                            value_t arg; matrix_t coeff, score, latent;
-                            if (parse_value(&arg) && current_token.type == TOK_RPAREN) { next_token();
-                                if (arg.type != VAL_MATRIX) { printf("Error: pca requires matrix\n"); done = 1; }
-                                else if (mat_pca(&coeff, &score, &latent, &arg.v.matrix)) {
-                                    value_t v; v.type = VAL_MATRIX;
-                                    mat_copy(&v.v.matrix, &coeff); if (mvidx[0] >= 0) set_var_value(mvidx[0], &v); else set_named_matrix(mvnames[0], &v.v.matrix);
-                                    mat_copy(&v.v.matrix, &score); if (mvidx[1] >= 0) set_var_value(mvidx[1], &v); else set_named_matrix(mvnames[1], &v.v.matrix);
-                                    mat_copy(&v.v.matrix, &latent); if (mvidx[2] >= 0) set_var_value(mvidx[2], &v); else set_named_matrix(mvnames[2], &v.v.matrix);
-                                    has_result = 0;
-                                } else { printf("Error: PCA failed\n"); done = 1; }
-                            } else { printf("Error: pca syntax\n"); done = 1; }
-                        } else if (strcmp(fn, "kmeans") == 0 && mvnum == 2) {
-                            value_t arg, karg; matrix_t idx_m, cent; int k;
-                            if (parse_value(&arg) && current_token.type == TOK_COMMA) { next_token();
-                                if (parse_value(&karg) && current_token.type == TOK_RPAREN) { next_token();
-                                    if (arg.type != VAL_MATRIX) { printf("Error: kmeans requires matrix\n"); done = 1; }
-                                    else { k = (karg.type == VAL_SCALAR) ? apf_to_long(&karg.v.scalar.re) : 2;
-                                        if (mat_kmeans(&idx_m, &cent, &arg.v.matrix, k)) {
-                                            value_t v; v.type = VAL_MATRIX;
-                                            mat_copy(&v.v.matrix, &idx_m); if (mvidx[0] >= 0) set_var_value(mvidx[0], &v); else set_named_matrix(mvnames[0], &v.v.matrix);
-                                            mat_copy(&v.v.matrix, &cent); if (mvidx[1] >= 0) set_var_value(mvidx[1], &v); else set_named_matrix(mvnames[1], &v.v.matrix);
-                                            has_result = 0;
-                                        } else { printf("Error: kmeans failed\n"); done = 1; } }
-                                } else { printf("Error: kmeans(X,k) syntax\n"); done = 1; }
-                            } else { printf("Error: kmeans(X,k) syntax\n"); done = 1; }
-                        } else { printf("Error: unknown [a,b]=func '%s' with %d outputs\n", fn, mvnum); done = 1; }
+                        if (dfe) {
+                            /* Use decomposition dispatch */
+                            value_t arg, arg2;
+                            DecompResult dresult;
+                            matrix_t *input2 = NULL;
+                            int i;
+                            
+                            if (!parse_value(&arg)) { done = 1; continue; }
+                            
+                            /* Check for second argument (e.g., kmeans(X, k)) */
+                            if (current_token.type == TOK_COMMA) {
+                                next_token();
+                                if (!parse_value(&arg2)) { done = 1; continue; }
+                                if (arg2.type == VAL_SCALAR) {
+                                    mat_zero(&arg2.v.matrix, 1, 1);
+                                    MAT_AT(&arg2.v.matrix, 0, 0) = arg2.v.scalar;
+                                }
+                                input2 = &arg2.v.matrix;
+                            }
+                            
+                            if (current_token.type != TOK_RPAREN) {
+                                printf("Error: expected ')'\n");
+                                done = 1; continue;
+                            }
+                            next_token();
+                            
+                            /* Ensure input is matrix */
+                            if (arg.type == VAL_SCALAR) {
+                                mat_zero(&arg.v.matrix, 1, 1);
+                                MAT_AT(&arg.v.matrix, 0, 0) = arg.v.scalar;
+                            }
+                            
+                            /* Execute decomposition */
+                            if (decomp_func_exec(fn, mvnum, &dresult, &arg.v.matrix, input2)) {
+                                value_t v; v.type = VAL_MATRIX;
+                                for (i = 0; i < dresult.num_outputs && i < mvnum; i++) {
+                                    mat_copy(&v.v.matrix, &dresult.outputs[i]);
+                                    if (mvidx[i] >= 0) set_var_value(mvidx[i], &v);
+                                    else set_named_matrix(mvnames[i], &v.v.matrix);
+                                }
+                                has_result = 0;
+                            } else {
+                                printf("Error: %s decomposition failed\n", fn);
+                                done = 1;
+                            }
+                        } else {
+                            /* Legacy fallback for unsupported functions */
+                            printf("Error: unknown [a,b]=func '%s' with %d outputs\n", fn, mvnum);
+                            done = 1;
+                        }
                     } else { printf("Error: expected '('\n"); done = 1; }
                 } else { printf("Error: expected function\n"); done = 1; }
                 if (!done) { if (current_token.type == TOK_SEMI) { next_token(); if (current_token.type == TOK_END) done = 1; } else if (current_token.type == TOK_END) done = 1; }
@@ -1422,7 +2271,7 @@ int eval_expr_line(const char *line, int quiet)
         }
         /* Handle variable assignment */
         if (current_token.type == TOK_FUNC || current_token.type == TOK_IMAG) {
-            char var_name[16];
+            char var_name[32];
             int var_idx;
             const char *saved_pos = input_ptr;
             token_t saved_tok = current_token;
@@ -1430,12 +2279,12 @@ int eval_expr_line(const char *line, int quiet)
             if (current_token.type == TOK_IMAG) {
                 strcpy(var_name, "i");
             } else {
-                strcpy(var_name, current_token.func_name);
+                { int _l = 0; while(_l < 31 && current_token.func_name[_l]) { var_name[_l] = current_token.func_name[_l]; _l++; } var_name[_l] = '\0'; }
             }
             var_idx = get_var_index(var_name);
             
             next_token();
-            if (var_idx >= 0 && current_token.type == TOK_ASSIGN) {
+            if (current_token.type == TOK_ASSIGN) {
                 next_token();
                 if (current_token.type == TOK_END || current_token.type == TOK_SEMI) {
                     printf("Error: expected expression after =\n");
@@ -1447,7 +2296,16 @@ int eval_expr_line(const char *line, int quiet)
                     done = 1;
                     continue;
                 }
-                set_var_value(var_idx, &result);
+                if (var_idx >= 0) {
+                    set_var_value(var_idx, &result);
+                } else {
+                    /* Named variable assignment */
+                    if (result.type == VAL_MATRIX) {
+                        set_named_matrix(var_name, &result.v.matrix);
+                    } else {
+                        set_named_scalar(var_name, &result.v.scalar);
+                    }
+                }
                 has_result = 1;
             } else {
                 int leading_not = 0;
@@ -1791,7 +2649,7 @@ int eval_expr_line(const char *line, int quiet)
     }
     
     /* Print final result */
-    if (has_result) {
+    if (has_result && quiet != 2) {  /* quiet=2 means totally silent */
         if ((is_equality_check || result_is_boolean) && result.type == VAL_SCALAR) {
             int val = apf_is_zero(&result.v.scalar.re) ? 0 : 1;
             printf("%s\n", val ? "true" : "false");

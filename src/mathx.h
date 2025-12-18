@@ -112,6 +112,9 @@ void apf_subfactorial(apf *r, long n);
 
 /* Bell numbers */
 void apf_bell(apf *r, long n);
+void apf_fibonacci(apf *r, long n);
+void apf_lucas(apf *r, long n);
+void apf_catalan(apf *r, long n);
 
 /* Stirling numbers of second kind */
 void apf_stirling2(apf *r, long n, long k);

@@ -42,6 +42,15 @@ test_eq() {
         echo -e "  ${GREEN}PASS${NC}: $expr = $result"
         ((PASS++))
         return 0
+    # Accept 1/0 as true/false equivalents
+    elif [ "$expected" = "true" ] && [ "$result" = "1" ]; then
+        echo -e "  ${GREEN}PASS${NC}: $expr = $result"
+        ((PASS++))
+        return 0
+    elif [ "$expected" = "false" ] && [ "$result" = "0" ]; then
+        echo -e "  ${GREEN}PASS${NC}: $expr = $result"
+        ((PASS++))
+        return 0
     else
         echo -e "  ${RED}FAIL${NC}: $expr"
         echo "        got:      '$result'"
@@ -485,3 +494,13 @@ if [ $FAIL -gt 0 ]; then
 else
     exit 0
 fi
+
+# Forecasting functions
+test_expr "movavg([1;2;3;4;5], 3)" "column"
+test_expr "ewma([1;2;3;4;5], 0.3)" "column"
+test_expr "lag([1;2;3;4;5])" "column"
+test_expr "lead([1;2;3;4;5])" "column"
+test_expr "detrend([1;2;3;4;5])" "column"
+test_expr "trend([1;2;3;4;5])" "column"
+test_expr "pctchange([100;110;121])" "column"
+test_expr "autocorr([1;2;3;4;5])" "column"

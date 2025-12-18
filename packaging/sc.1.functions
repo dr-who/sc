@@ -1,0 +1,75 @@
+.\" Auto-generated function reference for sc(1)
+.SH FUNCTIONS
+This section lists all available functions by category.
+Use \fBhelp <function>\fR for detailed documentation.
+.PP
+.BR (none) 
+.PP
+Built-in Functions (296 total):
+=================================
+.SS Trigonometry
+.BR sin .BR cos .BR tan .BR asin .BR acos .BR atan .BR atan2 .BR sinh .BR cosh .BR tanh 
+.BR asinh .BR acosh .BR atanh .BR sec .BR csc .BR cot .BR asec .BR acsc .BR acot .BR sech 
+.BR csch .BR coth .BR asech .BR acsch .BR acoth .BR sind .BR cosd .BR tand .BR asind .BR acosd 
+.BR atand .BR atan2d .BR sinc .BR sinpi .BR cospi 
+.SS Exponential
+.BR exp .BR exp2 .BR expm1 .BR pow2 .BR sqrt .BR cbrt .BR nthroot .BR hypot .BR realsqrt .BR realpow 
+
+.SS Logarithmic
+.BR ln .BR log .BR log10 .BR log2 .BR log1p .BR logb .BR reallog 
+.SS Complex
+.BR re .BR real .BR im .BR imag .BR conj .BR abs .BR arg .BR angle .BR phase .BR complex 
+.BR cart2pol .BR pol2cart 
+.SS Rounding
+.BR floor .BR ceil .BR round .BR trunc .BR fix .BR frac .BR sign .BR signum .BR mod .BR rem 
+.BR clamp .BR clip 
+.SS Number Theory
+.BR gcd .BR lcm .BR isprime .BR nextprime .BR prevprime .BR primepi .BR nthprime .BR fact .BR factorial .BR factorial2 
+.BR ncr .BR npr .BR comb .BR perm .BR fibonacci .BR lucas .BR catalan .BR divisors .BR divisorsum .BR totient 
+.BR eulerphi .BR mobius .BR even .BR odd .BR ndigits .BR digitsum .BR digitroot .BR isperfect .BR isabundant .BR isdeficient 
+.BR issquarefree 
+.SS Special Functions
+.BR gamma .BR lgamma .BR tgamma .BR beta .BR digamma .BR psi .BR erf .BR erfc .BR besselj .BR bessely 
+.BR zeta .BR harmonic .BR sigmoid .BR softplus .BR heaviside .BR step .BR rect .BR tri 
+.SS Statistics
+.BR sum .BR prod .BR mean .BR median .BR mode .BR std .BR var .BR min .BR max .BR range 
+.BR geomean .BR harmmean .BR skewness .BR kurtosis .BR mad .BR iqr .BR rms .BR sumsq .BR meansq .BR prctile 
+.BR zscore .BR cov .BR corrcoef 
+.SS Probability
+.BR normpdf .BR normcdf .BR norminv .BR tcdf .BR chi2cdf .BR rand .BR randn .BR randi .BR randperm 
+.SS Linear Algebra
+.BR det .BR inv .BR trace .BR trans .BR transpose .BR rank .BR cond .BR norm .BR linsolve .BR mldivide 
+.BR chol .BR qr .BR svd .BR lu .BR eig .BR null .BR schur .BR pinv 
+.SS Matrix
+.BR zeros .BR ones .BR eye .BR diag .BR linspace .BR logspace .BR magic .BR pascal .BR hilb .BR invhilb 
+.BR vander .BR toeplitz .BR hankel .BR compan .BR reshape .BR repmat .BR rot90 .BR flip .BR fliplr .BR flipud 
+.BR triu .BR tril .BR blkdiag .BR cat .BR horzcat .BR vertcat .BR circshift .BR sort .BR sortrows .BR unique 
+.BR kron .BR dot .BR cross 
+.SS Matrix Query
+.BR size .BR length .BR rows .BR cols .BR numel .BR ndims .BR isempty .BR isscalar .BR isvector .BR isrow 
+.BR iscolumn .BR ismatrix .BR issquare .BR issorted .BR issymmetric .BR nnz .BR find 
+.SS Signal Processing
+.BR conv .BR deconv .BR diff .BR gradient .BR cumsum .BR cumprod .BR cummin .BR cummax .BR movmean .BR movsum 
+.BR interp1 .BR trapz 
+.SS Polynomials
+.BR polyval .BR polyder .BR polyint .BR roots2 .BR quadroots 
+.SS Angle Conversion
+.BR deg2rad .BR rad2deg .BR wrapToPi .BR wrap180 .BR wrap360 .BR wrapTo180 .BR wrapTo360 
+.SS Set Operations
+.BR union .BR intersect .BR setdiff .BR setxor 
+.SS Logical
+.BR any .BR all .BR eq .BR ne .BR lt .BR le .BR gt .BR ge .BR isnan .BR isinf 
+.BR isfinite .BR isreal 
+.SS Bitwise
+.BR bitand .BR bitor .BR bitxor .BR bnot .BR bitshift .BR shl .BR shr 
+.SS Coordinates
+.BR cart2sph .BR sph2cart 
+.SS Utility
+.BR eps .BR realmax .BR realmin .BR nextpow2 .BR normalize .BR rescale 
+.SS Constants
+.BR pi .BR e .BR i .BR phi .BR golden .BR tau .BR Inf .BR NaN 
+.SS Data Science
+.BR pca .BR pcareduce .BR kmeans .BR silhouette .BR pdist 
+.SS Text Analysis
+.BR bow .BR tfidf .BR wordvec 
+Use 'help <func>' for details, 'demo <func>' for examples.

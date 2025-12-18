@@ -1,0 +1,17 @@
+load fisheriris
+rows(meas)
+cols(meas)
+mdl_knn = fitcknn(meas, species, 5)
+mdl_nb = fitcnb(meas, species)
+mdl_tree = fitctree(meas, species)
+mdl_svm = fitcsvm(meas, species)
+Y_knn = predict(mdl_knn, meas)
+Y_nb = predict(mdl_nb, meas)
+Y_tree = predict(mdl_tree, meas)
+Y_svm = predict(mdl_svm, meas)
+accuracy(species, Y_knn)
+accuracy(species, Y_nb)
+accuracy(species, Y_tree)
+accuracy(species, Y_svm)
+confusionmat(species, Y_knn)
+quit

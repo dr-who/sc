@@ -5,7 +5,7 @@
 
 /* Global state */
 calc_mode_t current_mode = MODE_DECIMAL;
-int display_digits = DEFAULT_DIGITS;  /* Default 16 significant figures */
+int display_digits = DEFAULT_DIGITS;  /* Default 15 (format long) */
 int display_fixed_places = 6;         /* Default 6 decimal places for FIX/SCI/ENG */
 value_t last_ans;      /* Previous answer */
 int last_ans_valid = 0;  /* Is last_ans set? */
@@ -139,17 +139,17 @@ int set_var_value(int idx, const value_t *val)
         /* Find existing slot or empty slot */
         for (i = 0; i < MAX_MATRIX_VARS; i++) {
             if (matrix_vars[i].defined && matrix_vars[i].name == name) {
-                /* Reuse existing slot */
-                mat_copy(&matrix_vars[i].val, &val->v.matrix);
+                /* Reuse existing slot - use persistent storage */
+                mat_copy_persist(&matrix_vars[i].val, &val->v.matrix);
                 return 1;
             }
         }
         for (i = 0; i < MAX_MATRIX_VARS; i++) {
             if (!matrix_vars[i].defined) {
-                /* Use empty slot */
+                /* Use empty slot - use persistent storage */
                 matrix_vars[i].defined = 1;
                 matrix_vars[i].name = name;
-                mat_copy(&matrix_vars[i].val, &val->v.matrix);
+                mat_copy_persist(&matrix_vars[i].val, &val->v.matrix);
                 return 1;
             }
         }
@@ -339,11 +339,23 @@ int set_named_scalar(const char *name, const apfc *val)
 
 int set_named_matrix(const char *name, const matrix_t *val)
 {
-    int idx = create_named_var(name);
+    int idx;
+    
+    /* Validate input */
+    if (!val || !val->data || val->rows <= 0 || val->cols <= 0) {
+        printf("Error: Invalid matrix data\n");
+        return 0;
+    }
+    
+    /* Create or get variable slot */
+    idx = create_named_var(name);
     if (idx < 0) return 0;
     
     named_vars[idx].type = VAL_MATRIX;
-    named_vars[idx].val.matrix = *val;
+    /* Copy matrix data to persistent storage */
+    if (!mat_copy_persist(&named_vars[idx].val.matrix, val)) {
+        return 0;
+    }
     return 1;
 }
 
@@ -356,7 +368,8 @@ int get_named_var(const char *name, value_t *result)
     if (named_vars[idx].type == VAL_SCALAR) {
         result->v.scalar = named_vars[idx].val.scalar;
     } else {
-        result->v.matrix = named_vars[idx].val.matrix;
+        /* Copy to arena for use in current command */
+        mat_copy(&result->v.matrix, &named_vars[idx].val.matrix);
     }
     return 1;
 }

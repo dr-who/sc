@@ -63,6 +63,7 @@ typedef enum {
     TOK_ASSIGN, TOK_EQUAL, TOK_NE, TOK_LT, TOK_LE, TOK_GT, TOK_GE, TOK_APPROX,
     TOK_AND, TOK_OR, TOK_NOT, TOK_XOR,
     TOK_SEMI, TOK_ERROR,
+    TOK_STRING,  /* String literal in single quotes */
     /* Matrix tokens */
     TOK_LBRACKET, TOK_RBRACKET, TOK_COLON, TOK_COMMA,
     /* Element-wise operators */
@@ -79,6 +80,7 @@ typedef struct {
     token_type_t type;
     apf value;
     char func_name[32];
+    char str_value[64];  /* For string literals */
 } token_t;
 
 /* ========== Value Type (scalar or matrix) ========== */
@@ -201,6 +203,8 @@ void next_token(void);
 int parse_expr(apfc *result);
 int parse_value(value_t *result);
 int parse_matrix(matrix_t *result);
+void parser_init_temps(void);
+int ensure_result_matrix(matrix_t *m, int rows, int cols);
 
 /* ========== Runtime (runtime.c) ========== */
 void init_user_funcs(void);

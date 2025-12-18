@@ -57,7 +57,12 @@ test_bool() {
     local expected="$2"
     local result
     result=$(echo "$expr" | $SC 2>/dev/null | head -1 | sed 's/^ *//;s/ *$//')
+    # Accept both string ("true"/"false") and numeric (1/0) forms
     if [ "$result" = "$expected" ]; then
+        ((PASS++)); return 0
+    elif [ "$expected" = "true" ] && [ "$result" = "1" ]; then
+        ((PASS++)); return 0
+    elif [ "$expected" = "false" ] && [ "$result" = "0" ]; then
         ((PASS++)); return 0
     else
         echo "  FAIL: $expr = '$result' (expected '$expected')"

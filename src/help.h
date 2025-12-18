@@ -4,7 +4,7 @@
 #ifndef HELP_H
 #define HELP_H
 
-#include "func_defs.h"
+#include "func_registry.h"
 
 /* Show help for a specific function */
 void show_function_help(const char *name);

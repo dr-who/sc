@@ -720,3 +720,57 @@ void apfx_logb(apf *r, const apf *x, const apf *base) {
     apfx_log(&log_base, base);
     apf_div(r, &log_x, &log_base);
 }
+
+/* ========== Integer Sequence Functions ========== */
+
+void apf_fibonacci(apf *r, long n) {
+    long i;
+    apf a, b, tmp;
+    if (n == 0) {
+        apf_from_int(r, 0);
+        return;
+    }
+    apf_from_int(&a, 0);
+    apf_from_int(&b, 1);
+    for (i = 2; i <= n; i++) {
+        apf_add(&tmp, &a, &b);
+        a = b;
+        b = tmp;
+    }
+    apf_copy(r, &b);
+}
+
+void apf_lucas(apf *r, long n) {
+    long i;
+    apf a, b, tmp;
+    if (n == 0) {
+        apf_from_int(r, 2);
+        return;
+    }
+    if (n == 1) {
+        apf_from_int(r, 1);
+        return;
+    }
+    apf_from_int(&a, 2);
+    apf_from_int(&b, 1);
+    for (i = 2; i <= n; i++) {
+        apf_add(&tmp, &a, &b);
+        a = b;
+        b = tmp;
+    }
+    apf_copy(r, &b);
+}
+
+void apf_catalan(apf *r, long n) {
+    /* C(n) = (2n)! / ((n+1)! * n!) = prod_{k=2}^{n} (n+k)/k */
+    long k;
+    apf num, k_val, nk;
+    apf_from_int(&num, 1);
+    for (k = 2; k <= n; k++) {
+        apf_from_int(&k_val, k);
+        apf_from_int(&nk, n + k);
+        apf_mul(&num, &num, &nk);
+        apf_div(&num, &num, &k_val);
+    }
+    apf_copy(r, &num);
+}

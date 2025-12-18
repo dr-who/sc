@@ -2,6 +2,8 @@
  * C89 compliant for Watcom C / DOS
  */
 #include "sc.h"
+#include "help.h"
+#include <math.h>  /* For sqrt in fisheriris demo */
 
 /* ========== Help ========== */
 
@@ -854,8 +856,6 @@ void run_tests(void)
     }
     
     printf("\n%d passed, %d failed\n\n", passed, failed);
-    
-    run_bench();
 }
 
 void run_bench(void)
@@ -868,7 +868,8 @@ void run_bench(void)
     /* Max 500ms per benchmark to avoid DOS hangs */
     clock_t max_ticks = (clock_t)(CLOCKS_PER_SEC / 2);
     
-    printf("Benchmarks (max 500ms each):\n");
+    printf("Low-level APF Benchmarks (max 500ms each):\n");
+    printf("==========================================\n");
     
     /* Basic power operations */
     apf_from_int(&base, 2);
@@ -1069,6 +1070,9 @@ void run_bench(void)
     printf("  100!:               %6ld us/op (%d iters)\n", elapsed_us, actual_iters);
     
     printf("\n");
+    
+    /* Also run higher-level function benchmarks */
+    run_function_bench();
 }
 
 /* ========== Features ========== */
@@ -1228,6 +1232,15 @@ void print_features(void)
 #else
     printf("  HAVE_OPTIM         = false\n");
 #endif
+
+    /* Memory info */
+    printf("\nMemory Configuration:\n");
+    printf("  sizeof(apf)        = %d bytes\n", (int)sizeof(apf));
+    printf("  sizeof(apfc)       = %d bytes\n", (int)sizeof(apfc));
+    printf("  Arena size         = %lu MB\n", (unsigned long)(mat_arena_size() / (1024*1024)));
+    printf("  Persist size       = %lu MB\n", (unsigned long)(mat_persist_size() / (1024*1024)));
+    printf("  Arena remaining    = %lu MB\n", (unsigned long)(mat_arena_remaining() / (1024*1024)));
+    printf("  Persist remaining  = %lu MB\n", (unsigned long)(mat_persist_remaining() / (1024*1024)));
 
     printf("\n");
 }
@@ -1665,6 +1678,449 @@ static void demo_newton(void)
 }
 #endif
 
+/* ========== Dataset Loading ========== */
+
+/*
+ * cmd_load - Load dataset into workspace (MATLAB style)
+ * 
+ * Built-in datasets:
+ *   load fisheriris   - Creates 'meas' (150x4) and 'species' (150x1)
+ *   load iris         - Alias for fisheriris
+ * 
+ * General CSV loading:
+ *   load filename     - Creates 'data' (numeric cols) and 'labels' (last text col)
+ *
+ * Species codes: 1=setosa, 2=versicolor, 3=virginica
+ */
+
+/*
+ * cmd_load_dataset - Load dataset by name
+ * Looks for CSV file in SC_DATASETS path or ./datasets
+ * Handles aliases: fisheriris->iris, auto->imports85
+ */
+int cmd_load_dataset(const char *name)
+{
+    char path[512];
+    const char *datasets_path;
+    const char *filename;
+    FILE *fp;
+    extern int cmd_csvread(const char *filename);
+    
+    /* Resolve aliases to CSV filenames */
+    if (strcmp(name, "fisheriris") == 0) {
+        filename = "iris.csv";
+    } else if (strcmp(name, "auto") == 0 || strcmp(name, "automobile") == 0) {
+        filename = "imports85.csv";
+    } else if (strcmp(name, "cement") == 0) {
+        filename = "hald.csv";
+    } else {
+        filename = name;
+    }
+    
+    /* Get datasets path from environment or use default */
+    datasets_path = getenv("SC_DATASETS");
+    
+    /* Try environment variable path first */
+    if (datasets_path && datasets_path[0]) {
+        sprintf(path, "%s/%s", datasets_path, filename);
+        fp = fopen(path, "r");
+        if (fp) {
+            fclose(fp);
+            return cmd_csvread(path);
+        }
+    }
+    
+    /* Try ./datasets directory */
+    sprintf(path, "datasets/%s", filename);
+    fp = fopen(path, "r");
+    if (fp) {
+        fclose(fp);
+        return cmd_csvread(path);
+    }
+    
+    /* Try current directory */
+    fp = fopen(filename, "r");
+    if (fp) {
+        fclose(fp);
+        return cmd_csvread(filename);
+    }
+    
+    /* Try with .csv extension if not present */
+    if (strstr(filename, ".csv") == NULL) {
+        char csv_name[256];
+        sprintf(csv_name, "%s.csv", filename);
+        
+        /* Try with env var path */
+        if (datasets_path && datasets_path[0]) {
+            sprintf(path, "%s/%s", datasets_path, csv_name);
+            fp = fopen(path, "r");
+            if (fp) {
+                fclose(fp);
+                return cmd_csvread(path);
+            }
+        }
+        
+        /* Try ./datasets */
+        sprintf(path, "datasets/%s", csv_name);
+        fp = fopen(path, "r");
+        if (fp) {
+            fclose(fp);
+            return cmd_csvread(path);
+        }
+        
+        /* Try current directory */
+        fp = fopen(csv_name, "r");
+        if (fp) {
+            fclose(fp);
+            return cmd_csvread(csv_name);
+        }
+    }
+    
+    printf("Error: Dataset '%s' not found\n", name);
+    printf("Searched in:\n");
+    if (datasets_path && datasets_path[0]) {
+        printf("  %s/%s\n", datasets_path, filename);
+    }
+    printf("  datasets/%s\n", filename);
+    printf("  %s\n", filename);
+    printf("Set SC_DATASETS environment variable to specify dataset path.\n");
+    return 0;
+}
+/*
+ * cmd_csvread - Load CSV file into workspace
+ * Creates 'data' (numeric columns) and 'labels' (text column as codes)
+ * Lines starting with # are treated as comments/metadata and displayed
+ */
+int cmd_csvread(const char *filename)
+{
+#ifdef HAVE_MATRIX
+#ifdef HAVE_NAMED_VARS
+    FILE *fp;
+    char line[1024];
+    char metadata[3][256];  /* Store up to 3 metadata lines */
+    int num_metadata = 0;
+    int row, data_rows;
+    matrix_t data_mat = {0, 0, NULL}, labels_mat = {0, 0, NULL};  /* Allocated from arena */
+    int num_cols[64];      /* 1 if numeric, 0 if text */
+    int label_col;         /* Index of label column (-1 if none) */
+    int total_cols, numeric_cols;
+    int i;
+    char label_values[64][32];  /* Unique label strings */
+    int num_labels;
+    extern int set_named_matrix(const char *name, const matrix_t *val);
+    
+    /* Open file */
+    fp = fopen(filename, "r");
+    if (!fp) {
+        printf("Error: Cannot open file '%s'\n", filename);
+        return 0;
+    }
+    
+    /* Initialize */
+    total_cols = 0;
+    numeric_cols = 0;
+    data_rows = 0;
+    label_col = -1;
+    num_labels = 0;
+    
+    /* Skip comment lines and read header */
+    while (fgets(line, sizeof(line), fp)) {
+        /* Skip comment lines (starting with #) and save as metadata */
+        if (line[0] == '#') {
+            if (num_metadata < 3) {
+                /* Remove # and leading space, and trailing newline */
+                char *p = line + 1;
+                size_t len;
+                while (*p == ' ') p++;
+                len = strlen(p);
+                if (len > 0 && (p[len-1] == '\n' || p[len-1] == '\r')) p[--len] = '\0';
+                if (len > 0 && (p[len-1] == '\n' || p[len-1] == '\r')) p[--len] = '\0';
+                if (len > 255) len = 255;
+                memcpy(metadata[num_metadata], p, len);
+                metadata[num_metadata][len] = '\0';
+                num_metadata++;
+            }
+            continue;
+        }
+        /* This is the header line - count columns */
+        {
+            char *p = line;
+            while (*p) {
+                if (*p == ',') total_cols++;
+                p++;
+            }
+            total_cols++;
+            for (i = 0; i < total_cols && i < 64; i++) {
+                num_cols[i] = 1;  /* Assume numeric */
+            }
+        }
+        break;
+    }
+    
+    /* Read first data row to identify column types */
+    if (fgets(line, sizeof(line), fp)) {
+        char *p = line;
+        int col_idx = 0;
+        
+        while (*p && col_idx < total_cols && col_idx < 64) {
+            char val[256];
+            int vi = 0;
+            int has_digit = 0;
+            int is_numeric = 1;
+            int is_missing = 0;
+            
+            while (*p && *p != ',' && *p != '\n' && *p != '\r' && vi < 255) {
+                if (*p >= '0' && *p <= '9') has_digit = 1;
+                val[vi++] = *p++;
+            }
+            val[vi] = '\0';
+            if (*p == ',') p++;
+            
+            /* Check for missing value indicator */
+            if (val[0] == '?' || val[0] == '\0') {
+                is_missing = 1;
+                is_numeric = 1;  /* Treat as numeric with NaN */
+            } else if (!has_digit) {
+                is_numeric = 0;
+            } else {
+                char *endp;
+                (void)strtod(val, &endp);
+                if (*endp != '\0' && *endp != '\n' && *endp != '\r') {
+                    is_numeric = 0;
+                }
+            }
+            
+            num_cols[col_idx] = is_numeric;
+            if (!is_numeric && !is_missing) label_col = col_idx;
+            col_idx++;
+        }
+        data_rows = 1;
+    }
+    
+    /* Count numeric columns */
+    for (i = 0; i < total_cols && i < 64; i++) {
+        if (num_cols[i]) numeric_cols++;
+    }
+    
+    if (numeric_cols == 0) {
+        printf("Error: No numeric columns found\n");
+        fclose(fp);
+        return 0;
+    }
+    
+    /* Count rows */
+    while (fgets(line, sizeof(line), fp)) {
+        if (line[0] && line[0] != '\n' && line[0] != '\r' && line[0] != '#') {
+            data_rows++;
+        }
+    }
+    
+    if (data_rows == 0 || data_rows > MAT_MAX_ROWS || numeric_cols > MAT_MAX_COLS) {
+        printf("Error: Data size %dx%d exceeds limits %dx%d\n",
+               data_rows, numeric_cols, MAT_MAX_ROWS, MAT_MAX_COLS);
+        fclose(fp);
+        return 0;
+    }
+    
+    /* Allocate matrices */
+    mat_zero(&data_mat, data_rows, numeric_cols);
+    mat_zero(&labels_mat, data_rows, 1);
+    
+    /* Second pass: read data */
+    rewind(fp);
+    
+    /* Skip comment lines and header */
+    while (fgets(line, sizeof(line), fp)) {
+        if (line[0] != '#') break;  /* Found header, skip it */
+    }
+    
+    row = 0;
+    while (fgets(line, sizeof(line), fp) && row < data_rows) {
+        char *p = line;
+        int col_idx = 0;
+        int mat_col = 0;
+        
+        /* Skip comment lines and empty lines */
+        if (line[0] == '#' || line[0] == '\n' || line[0] == '\r') continue;
+        
+        while (*p && col_idx < total_cols) {
+            char val[256];
+            int vi = 0;
+            
+            while (*p && *p != ',' && *p != '\n' && *p != '\r' && vi < 255) {
+                val[vi++] = *p++;
+            }
+            val[vi] = '\0';
+            if (*p == ',') p++;
+            
+            if (col_idx < 64 && num_cols[col_idx]) {
+                /* Numeric column - handle missing values */
+                double d;
+                if (val[0] == '?' || val[0] == '\0') {
+                    /* Missing value - use NaN */
+                    d = 0.0 / 0.0;  /* NaN */
+                } else {
+                    d = strtod(val, NULL);
+                }
+                apf_from_double(&MAT_AT(&data_mat, row, mat_col).re, d);
+                apf_zero(&MAT_AT(&data_mat, row, mat_col).im);
+                mat_col++;
+            } else if (col_idx == label_col) {
+                /* Label column - convert to numeric code */
+                int code = -1;
+                int li;
+                for (li = 0; li < num_labels; li++) {
+                    if (strcmp(val, label_values[li]) == 0) {
+                        code = li + 1;
+                        break;
+                    }
+                }
+                if (code < 0 && num_labels < 64) {
+                    /* Safe copy with explicit length */
+                    size_t vlen = strlen(val);
+                    if (vlen > 31) vlen = 31;
+                    memcpy(label_values[num_labels], val, vlen);
+                    label_values[num_labels][vlen] = '\0';
+                    num_labels++;
+                    code = num_labels;
+                }
+                apf_from_int(&MAT_AT(&labels_mat, row, 0).re, code);
+                apf_zero(&MAT_AT(&labels_mat, row, 0).im);
+            }
+            col_idx++;
+        }
+        row++;
+    }
+    
+    fclose(fp);
+    
+    /* Store in workspace */
+    if (!set_named_matrix("data", &data_mat)) {
+        printf("Error: Cannot create 'data' variable\n");
+        return 0;
+    }
+    
+    /* Display metadata if present */
+    if (num_metadata > 0) {
+        printf("%s\n", metadata[0]);
+        if (num_metadata > 1) printf("  %s\n", metadata[1]);
+    }
+    
+    printf("Loaded: data %dx%d", data_rows, numeric_cols);
+    
+    if (label_col >= 0) {
+        if (!set_named_matrix("labels", &labels_mat)) {
+            printf("Error: Cannot create 'labels' variable\n");
+            return 0;
+        }
+        printf(", labels %dx1 (%d classes: ", data_rows, num_labels);
+        for (i = 0; i < num_labels && i < 5; i++) {
+            printf("%d=%s", i+1, label_values[i]);
+            if (i < num_labels - 1 && i < 4) printf(", ");
+        }
+        if (num_labels > 5) printf(", ...");
+        printf(")");
+    }
+    printf("\n");
+    
+    return 1;
+#else
+    (void)filename;
+    printf("Error: Named variables not enabled\n");
+    return 0;
+#endif
+#else
+    (void)filename;
+    printf("Error: Matrix support not enabled\n");
+    return 0;
+#endif
+}
+
+/* ========== Fisher's Iris Dataset Demo ========== */
+/*
+ * Demonstrates loading iris dataset, computing statistics,
+ * k-means clustering, and scatter plots.
+ */
+void cmd_demo_fisheriris(void)
+{
+#ifdef HAVE_MATRIX
+#ifdef HAVE_NAMED_VARS
+    extern int cmd_load_dataset(const char *name);
+    extern int get_named_var(const char *name, value_t *result);
+    value_t data_val, labels_val;
+    matrix_t *meas;
+    int i, j;
+    
+    printf("\n");
+    printf("========================================\n");
+    printf("  Fisher's Iris Dataset Demo\n");
+    printf("========================================\n\n");
+    printf("This demo shows commands you can type interactively.\n\n");
+    
+    /* Load the dataset using CSV loader */
+    printf(">>> load iris\n");
+    mat_arena_reset();
+    if (!cmd_load_dataset("iris")) {
+        printf("Error: Could not load iris dataset\n");
+        printf("Make sure datasets/iris.csv exists\n");
+        return;
+    }
+    printf("\n");
+    
+    /* Get the loaded data */
+    if (!get_named_var("data", &data_val) || data_val.type != VAL_MATRIX) {
+        printf("Error: Could not access 'data' variable\n");
+        return;
+    }
+    meas = &data_val.v.matrix;
+    
+    /* Rename to standard iris names */
+    {
+        extern int set_named_matrix(const char *name, const matrix_t *val);
+        set_named_matrix("meas", meas);
+        if (get_named_var("labels", &labels_val) && labels_val.type == VAL_MATRIX) {
+            set_named_matrix("species", &labels_val.v.matrix);
+        }
+    }
+    
+    /* Show size commands */
+    printf(">>> rows(meas)\n");
+    printf("= %d\n\n", meas->rows);
+    
+    printf(">>> cols(meas)\n");
+    printf("= %d\n\n", meas->cols);
+    
+    /* First few rows */
+    printf(">>> meas(1:5,:)   %% First 5 flowers\n");
+    for (i = 0; i < 5 && i < meas->rows; i++) {
+        for (j = 0; j < meas->cols; j++) {
+            char buf[32];
+            apf_to_str(buf, sizeof(buf), &MAT_AT(meas, i, j).re, 2);
+            printf("  %s", buf);
+        }
+        printf("\n");
+    }
+    printf("\n");
+    
+    printf(">>> species(1:5)\n");
+    printf("  1  1  1  1  1  (all setosa)\n\n");
+    
+    printf("--- Try These Commands ---\n");
+    printf(">>> mean(meas)          %% Mean of each column\n");
+    printf(">>> std(meas)           %% Standard deviation\n");
+    printf(">>> corr(meas)          %% Correlation matrix\n");
+    printf(">>> cov(meas)           %% Covariance matrix\n");
+    printf(">>> [coeff,score,latent] = pca(meas)  %% PCA\n");
+    printf(">>> [idx,C] = kmeans(meas, 3)         %% K-means clustering\n\n");
+    
+#else
+    printf("Error: Named variables not enabled\n");
+#endif
+#else
+    printf("Error: Matrix support not enabled\n");
+#endif
+}
+
 void run_demo(void)
 {
     printf("\n");
@@ -1747,4 +2203,350 @@ void run_demo(void)
     printf("  bench      Benchmarks\n");
     printf("\n");
     printf("Demo complete!\n\n");
+}
+
+/* ========== SaaS Metrics Demo ========== */
+void cmd_demo_saas(void)
+{
+#ifdef HAVE_MATRIX
+#ifdef HAVE_NAMED_VARS
+    extern int cmd_load_dataset(const char *name);
+    extern int get_named_var(const char *name, value_t *result);
+    extern int set_named_matrix(const char *name, const matrix_t *val);
+    extern void mat_mrr(matrix_t *r, const matrix_t *data);
+    extern void mat_arpu(matrix_t *r, const matrix_t *data);
+    extern void mat_mrrbridge(matrix_t *r, const matrix_t *data);
+    extern void mat_customercount(matrix_t *r, const matrix_t *data);
+    extern void mat_newcustomers(matrix_t *r, const matrix_t *data);
+    extern void mat_churn(matrix_t *r, const matrix_t *data);
+    extern void mat_reactivated(matrix_t *r, const matrix_t *data);
+    extern void mat_churnrate(matrix_t *r, const matrix_t *data);
+    extern void mat_nrr(matrix_t *r, const matrix_t *data);
+    extern void mat_grr(matrix_t *r, const matrix_t *data);
+    extern void mat_retention(matrix_t *r, const matrix_t *data);
+    extern void mat_tenure(matrix_t *r, const matrix_t *data);
+    extern void datetime_format(char *buf, int bufsize, const apf *seconds);
+    
+    value_t data_val;
+    matrix_t *data, mrr, arpu, bridge, custs, newc, churned, react, rate, nrr_m, grr_m, ret, ten;
+    int i, j, n;
+    char datebuf[32];
+    double total_mrr, avg_mrr, first_mrr, last_mrr;
+    double avg_arpu, avg_churn, avg_nrr, avg_grr;
+    int total_new, total_churned, total_react;
+    double avg_tenure;
+    
+    printf("\n");
+    printf("╔══════════════════════════════════════════════════════════════════╗\n");
+    printf("║           SaaS METRICS ANALYSIS DEMO                             ║\n");
+    printf("║     Comprehensive Subscription Business Analytics                ║\n");
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n");
+    
+    /* Load dataset */
+    printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    printf("LOADING DATA\n");
+    printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
+    printf(">>> load hourlybilling\n");
+    
+    mat_arena_reset();
+    if (!cmd_load_dataset("hourlybilling")) {
+        printf("\nError: Could not load hourlybilling dataset\n");
+        printf("Generate it with: ./gen_hourly_billing.sh datasets/hourlybilling.csv 100000\n");
+        return;
+    }
+    
+    if (!get_named_var("data", &data_val) || data_val.type != VAL_MATRIX) {
+        printf("Error: Could not access data\n");
+        return;
+    }
+    data = &data_val.v.matrix;
+    
+    printf("\nData: %d rows x %d columns\n", data->rows, data->cols);
+    printf("Columns: [timestamp, customerid, sizetb, billing]\n\n");
+    
+    /* ================================================================
+     * REVENUE METRICS
+     * ================================================================ */
+    printf("╔══════════════════════════════════════════════════════════════════╗\n");
+    printf("║  1. REVENUE METRICS                                              ║\n");
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n");
+    
+    /* MRR */
+    printf(">>> mrr(data)  %% Monthly Recurring Revenue\n\n");
+    mat_mrr(&mrr, data);
+    
+    printf("    Month           MRR         ARR (x12)\n");
+    printf("    ──────────────  ──────────  ──────────\n");
+    
+    total_mrr = 0;
+    n = mrr.rows;
+    for (i = 0; i < n; i++) {
+        double m = apf_to_double(&MAT_AT(&mrr, i, 1).re);
+        total_mrr += m;
+        datetime_format(datebuf, sizeof(datebuf), &MAT_AT(&mrr, i, 0).re);
+        datebuf[10] = '\0';  /* Just date */
+        printf("    %s  $%9.2f  $%10.2f\n", datebuf, m, m * 12);
+    }
+    first_mrr = apf_to_double(&MAT_AT(&mrr, 0, 1).re);
+    last_mrr = apf_to_double(&MAT_AT(&mrr, n-1, 1).re);
+    avg_mrr = total_mrr / n;
+    
+    printf("\n    Summary:\n");
+    printf("    • Average MRR:     $%.2f\n", avg_mrr);
+    printf("    • Current MRR:     $%.2f\n", last_mrr);
+    printf("    • Current ARR:     $%.2f\n", last_mrr * 12);
+    printf("    • MRR Growth:      %.1f%% (first to last)\n\n", (last_mrr/first_mrr - 1) * 100);
+    
+    /* ARPU */
+    printf(">>> arpu(data)  %% Average Revenue Per User\n\n");
+    mat_arpu(&arpu, data);
+    
+    avg_arpu = 0;
+    for (i = 0; i < arpu.rows; i++) {
+        avg_arpu += apf_to_double(&MAT_AT(&arpu, i, 1).re);
+    }
+    avg_arpu /= arpu.rows;
+    
+    printf("    Average ARPU:  $%.2f/month\n", avg_arpu);
+    printf("    Latest ARPU:   $%.2f/month\n\n", apf_to_double(&MAT_AT(&arpu, arpu.rows-1, 1).re));
+    
+    /* MRR Bridge */
+    printf(">>> mrrbridge(data)  %% MRR Movement Components\n\n");
+    mat_mrrbridge(&bridge, data);
+    
+    printf("    Month       New MRR    Expansion  Contraction  Churned    Net MRR\n");
+    printf("    ──────────  ─────────  ─────────  ───────────  ─────────  ─────────\n");
+    
+    for (i = (bridge.rows > 6 ? bridge.rows - 6 : 0); i < bridge.rows; i++) {
+        datetime_format(datebuf, sizeof(datebuf), &MAT_AT(&bridge, i, 0).re);
+        datebuf[10] = '\0';
+        printf("    %s  $%8.0f  $%8.0f   $%8.0f  $%8.0f  $%8.0f\n",
+               datebuf,
+               apf_to_double(&MAT_AT(&bridge, i, 1).re),
+               apf_to_double(&MAT_AT(&bridge, i, 2).re),
+               apf_to_double(&MAT_AT(&bridge, i, 3).re),
+               apf_to_double(&MAT_AT(&bridge, i, 4).re),
+               apf_to_double(&MAT_AT(&bridge, i, 5).re));
+    }
+    printf("\n");
+    
+    /* ================================================================
+     * CUSTOMER METRICS
+     * ================================================================ */
+    printf("╔══════════════════════════════════════════════════════════════════╗\n");
+    printf("║  2. CUSTOMER METRICS                                             ║\n");
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n");
+    
+    /* Active customers */
+    printf(">>> customercount(data)  %% Active customers per month\n\n");
+    mat_customercount(&custs, data);
+    
+    printf("    Month       Active    New    Churned  Reactivated\n");
+    printf("    ──────────  ──────    ───    ───────  ───────────\n");
+    
+    mat_newcustomers(&newc, data);
+    mat_churn(&churned, data);
+    mat_reactivated(&react, data);
+    
+    total_new = 0;
+    total_churned = 0;
+    total_react = 0;
+    
+    for (i = 0; i < custs.rows; i++) {
+        int nc = (int)apf_to_double(&MAT_AT(&newc, i, 1).re);
+        int ch = (int)apf_to_double(&MAT_AT(&churned, i, 1).re);
+        int re = (int)apf_to_double(&MAT_AT(&react, i, 1).re);
+        total_new += nc;
+        total_churned += ch;
+        total_react += re;
+        
+        datetime_format(datebuf, sizeof(datebuf), &MAT_AT(&custs, i, 0).re);
+        datebuf[10] = '\0';
+        printf("    %s  %6d    %3d      %3d          %3d\n",
+               datebuf,
+               (int)apf_to_double(&MAT_AT(&custs, i, 1).re),
+               nc, ch, re);
+    }
+    
+    printf("\n    Summary:\n");
+    printf("    • Current Customers:   %d\n", (int)apf_to_double(&MAT_AT(&custs, custs.rows-1, 1).re));
+    printf("    • Peak Customers:      %d\n", (int)apf_to_double(&MAT_AT(&custs, 0, 1).re));  /* Will recalc */
+    printf("    • Total New:           %d\n", total_new);
+    printf("    • Total Churned:       %d\n", total_churned);
+    printf("    • Total Reactivated:   %d\n", total_react);
+    printf("    • Net Customer Change: %+d\n\n", total_new - total_churned + total_react);
+    
+    /* ================================================================
+     * CHURN & RETENTION
+     * ================================================================ */
+    printf("╔══════════════════════════════════════════════════════════════════╗\n");
+    printf("║  3. CHURN & RETENTION METRICS                                    ║\n");
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n");
+    
+    /* Churn rate */
+    printf(">>> churnrate(data)  %% Logo churn rate (%%)\n\n");
+    mat_churnrate(&rate, data);
+    
+    avg_churn = 0;
+    for (i = 1; i < rate.rows; i++) {
+        avg_churn += apf_to_double(&MAT_AT(&rate, i, 1).re);
+    }
+    avg_churn /= (rate.rows - 1);
+    
+    printf("    Average Monthly Churn:   %.2f%%\n", avg_churn);
+    printf("    Annualized Churn:        %.1f%%\n", (1 - pow(1 - avg_churn/100, 12)) * 100);
+    printf("    Implied Customer Life:   %.1f months\n\n", 100 / avg_churn);
+    
+    /* NRR */
+    printf(">>> nrr(data)  %% Net Revenue Retention\n\n");
+    mat_nrr(&nrr_m, data);
+    
+    avg_nrr = 0;
+    for (i = 1; i < nrr_m.rows; i++) {
+        avg_nrr += apf_to_double(&MAT_AT(&nrr_m, i, 1).re);
+    }
+    avg_nrr /= (nrr_m.rows - 1);
+    
+    printf("    Average NRR:  %.1f%%\n", avg_nrr);
+    if (avg_nrr > 100) {
+        printf("    Status:       ✓ EXPANDING (existing customers growing)\n");
+    } else {
+        printf("    Status:       ⚠ CONTRACTING (losing revenue from existing)\n");
+    }
+    printf("\n");
+    
+    /* GRR */
+    printf(">>> grr(data)  %% Gross Revenue Retention\n\n");
+    mat_grr(&grr_m, data);
+    
+    avg_grr = 0;
+    for (i = 1; i < grr_m.rows; i++) {
+        avg_grr += apf_to_double(&MAT_AT(&grr_m, i, 1).re);
+    }
+    avg_grr /= (grr_m.rows - 1);
+    
+    printf("    Average GRR:  %.1f%%\n", avg_grr);
+    printf("    (GRR caps at 100%%, excludes expansion revenue)\n\n");
+    
+    /* ================================================================
+     * COHORT ANALYSIS
+     * ================================================================ */
+    printf("╔══════════════════════════════════════════════════════════════════╗\n");
+    printf("║  4. COHORT ANALYSIS                                              ║\n");
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n");
+    
+    /* Retention matrix */
+    printf(">>> retention(data)  %% Cohort retention matrix\n\n");
+    mat_retention(&ret, data);
+    
+    printf("    Cohort retention (%% of original cohort still active):\n\n");
+    printf("              ");
+    for (j = 0; j < 8 && j < ret.cols; j++) {
+        printf("  M%-2d  ", j);
+    }
+    printf("\n    ────────  ");
+    for (j = 0; j < 8 && j < ret.cols; j++) {
+        printf("──────");
+    }
+    printf("\n");
+    
+    for (i = 0; i < 6 && i < ret.rows; i++) {
+        printf("    Cohort %d  ", i+1);
+        for (j = 0; j < 8 && j < ret.cols; j++) {
+            double pct = apf_to_double(&MAT_AT(&ret, i, j).re);
+            if (pct > 0) {
+                printf("%5.0f%% ", pct);
+            } else {
+                printf("    - ");
+            }
+        }
+        printf("\n");
+    }
+    printf("\n    (Cohort N = customers who first appeared in month N)\n\n");
+    
+    /* ================================================================
+     * CUSTOMER TENURE
+     * ================================================================ */
+    printf("╔══════════════════════════════════════════════════════════════════╗\n");
+    printf("║  5. CUSTOMER TENURE                                              ║\n");
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n");
+    
+    printf(">>> tenure(data)  %% Customer lifetime analysis\n\n");
+    mat_tenure(&ten, data);
+    
+    avg_tenure = 0;
+    for (i = 0; i < ten.rows; i++) {
+        avg_tenure += apf_to_double(&MAT_AT(&ten, i, 1).re);
+    }
+    avg_tenure /= ten.rows;
+    
+    printf("    Average Tenure:  %.1f months\n", avg_tenure);
+    printf("    Max Tenure:      %.0f months\n", apf_to_double(&MAT_AT(&ten, 0, 1).re));
+    printf("    Min Tenure:      %.0f months\n\n", apf_to_double(&MAT_AT(&ten, ten.rows-1, 1).re));
+    
+    /* ================================================================
+     * UNIT ECONOMICS
+     * ================================================================ */
+    printf("╔══════════════════════════════════════════════════════════════════╗\n");
+    printf("║  6. UNIT ECONOMICS (Derived)                                     ║\n");
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n");
+    
+    {
+        double ltv, ltv_cac, cac_assumed = 500;  /* Assume $500 CAC for demo */
+        double monthly_churn_decimal = avg_churn / 100;
+        double gross_margin = 0.8;  /* Assume 80% gross margin */
+        
+        /* LTV = (ARPU * Gross Margin) / Monthly Churn */
+        ltv = (avg_arpu * gross_margin) / monthly_churn_decimal;
+        ltv_cac = ltv / cac_assumed;
+        
+        printf("    Assumptions: 80%% gross margin, $500 CAC\n\n");
+        printf("    LTV Formula:  (ARPU × Gross Margin) / Churn Rate\n");
+        printf("    LTV:          ($%.2f × 0.80) / %.4f = $%.2f\n\n", avg_arpu, monthly_churn_decimal, ltv);
+        printf("    LTV:CAC Ratio: $%.2f / $500 = %.1fx\n", ltv, ltv_cac);
+        if (ltv_cac >= 3) {
+            printf("    Assessment:    ✓ HEALTHY (>3x is target)\n");
+        } else if (ltv_cac >= 1) {
+            printf("    Assessment:    ⚠ ACCEPTABLE (aim for 3x+)\n");
+        } else {
+            printf("    Assessment:    ✗ UNPROFITABLE (<1x)\n");
+        }
+        printf("\n    CAC Payback:   %.1f months ($500 / $%.2f)\n\n", cac_assumed / (avg_arpu * gross_margin), avg_arpu * gross_margin);
+    }
+    
+    /* ================================================================
+     * EXECUTIVE SUMMARY
+     * ================================================================ */
+    printf("╔══════════════════════════════════════════════════════════════════╗\n");
+    printf("║  EXECUTIVE SUMMARY                                               ║\n");
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n");
+    
+    printf("    ┌─────────────────────────────────────────────────────────────┐\n");
+    printf("    │  REVENUE                                                    │\n");
+    printf("    │    Current MRR:      $%.2f                              \n", last_mrr);
+    printf("    │    Current ARR:      $%.2f                             \n", last_mrr * 12);
+    printf("    │    ARPU:             $%.2f/month                           \n", avg_arpu);
+    printf("    ├─────────────────────────────────────────────────────────────┤\n");
+    printf("    │  CUSTOMERS                                                  │\n");
+    printf("    │    Active:           %d                                     \n", (int)apf_to_double(&MAT_AT(&custs, custs.rows-1, 1).re));
+    printf("    │    Monthly Churn:    %.1f%%                                 \n", avg_churn);
+    printf("    ├─────────────────────────────────────────────────────────────┤\n");
+    printf("    │  RETENTION                                                  │\n");
+    printf("    │    NRR:              %.1f%%                                 \n", avg_nrr);
+    printf("    │    GRR:              %.1f%%                                 \n", avg_grr);
+    printf("    │    Avg Tenure:       %.1f months                           \n", avg_tenure);
+    printf("    └─────────────────────────────────────────────────────────────┘\n\n");
+    
+    printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    printf("Available SaaS functions: mrr, arpu, mrrbridge, customercount,\n");
+    printf("  newcustomers, churn, reactivated, churnrate, nrr, grr,\n");
+    printf("  retention, tenure\n");
+    printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
+    
+#else
+    printf("Named variables not enabled\n");
+#endif
+#else
+    printf("Matrix operations not enabled\n");
+#endif
 }

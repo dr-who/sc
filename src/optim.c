@@ -189,10 +189,12 @@ int quadprog_solve(matrix_t *x, apf *fval,
                    const matrix_t *lb, const matrix_t *ub,
                    int n)
 {
-    matrix_t grad;
+    matrix_t grad = {0, 0, NULL};
     apf step, one, tmp, prev_fval, diff;
     int iter, i, max_iter;
     int has_bounds;
+    
+    MAT_INIT_EMPTY(grad);
     
     if (n <= 0 || n > MAT_MAX_ROWS) {
         printf("Error: invalid problem size\n");
@@ -203,8 +205,8 @@ int quadprog_solve(matrix_t *x, apf *fval,
     has_bounds = (lb != NULL && lb->rows > 0) || (ub != NULL && ub->rows > 0);
     
     /* Initialize x with equal weights */
-    x->rows = n;
-    x->cols = 1;
+    mat_zero(x, n, 1);
+    if (!x->data) return 0;
     {
         apf equal;
         apf_from_int(&equal, n);
@@ -217,8 +219,8 @@ int quadprog_solve(matrix_t *x, apf *fval,
     }
     
     /* Initialize gradient matrix */
-    grad.rows = n;
-    grad.cols = 1;
+    mat_zero(&grad, n, 1);
+    if (!grad.data) return 0;
     
     /* Step size - use 1 / (2 * max eigenvalue estimate) */
     /* For simplicity, use a small fixed step */
@@ -290,15 +292,15 @@ int quadprog_solve(matrix_t *x, apf *fval,
 int minvar_portfolio(matrix_t *weights, apf *variance,
                      const matrix_t *Sigma, int n)
 {
-    matrix_t Aeq, beq, lb, ub;
+    matrix_t Aeq = {0,0,NULL}, beq = {0,0,NULL}, lb = {0,0,NULL}, ub = {0,0,NULL};
     int i;
     
     /* Set up constraints */
     /* Aeq = ones(1, n), beq = 1 */
-    Aeq.rows = 1;
-    Aeq.cols = n;
-    beq.rows = 1;
-    beq.cols = 1;
+    mat_zero(&Aeq, 1, n);
+    mat_zero(&beq, 1, 1);
+    if (!Aeq.data || !beq.data) return 0;
+    
     apf_from_int(&MAT_AT(&beq, 0, 0).re, 1);
     apf_zero(&MAT_AT(&beq, 0, 0).im);
     for (i = 0; i < n; i++) {
@@ -307,10 +309,10 @@ int minvar_portfolio(matrix_t *weights, apf *variance,
     }
     
     /* lb = zeros(n, 1), ub = ones(n, 1) */
-    lb.rows = n;
-    lb.cols = 1;
-    ub.rows = n;
-    ub.cols = 1;
+    mat_zero(&lb, n, 1);
+    mat_zero(&ub, n, 1);
+    if (!lb.data || !ub.data) return 0;
+    
     for (i = 0; i < n; i++) {
         apf_zero(&MAT_AT(&lb, i, 0).re);
         apf_zero(&MAT_AT(&lb, i, 0).im);

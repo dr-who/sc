@@ -133,7 +133,7 @@ void next_token(void)
             const char *exp_start = input_ptr;
             int exp_sign = 0;
             long exp_val = 0;
-            apf multiplier;
+            apf pow10, base10, temp2;
             
             input_ptr++;
             
@@ -153,24 +153,26 @@ void next_token(void)
                     input_ptr++;
                 }
                 
-                /* Apply 10^exp to the number */
-                apf_from_int(&multiplier, 10);
-                if (exp_sign) {
-                    /* Divide by 10^exp_val */
-                    while (exp_val > 0) {
-                        apf_div(&temp, &int_part, &multiplier);
-                        apf_copy(&int_part, &temp);
-                        exp_val--;
+                /* Compute 10^exp_val using fast exponentiation by squaring: O(log N) */
+                apf_from_int(&pow10, 1);
+                apf_from_int(&base10, 10);
+                while (exp_val > 0) {
+                    if (exp_val & 1) {
+                        apf_mul(&temp2, &pow10, &base10);
+                        apf_copy(&pow10, &temp2);
                     }
-                } else {
-                    /* Multiply by 10^exp_val */
-                    while (exp_val > 0) {
-                        apf_mul(&temp, &int_part, &multiplier);
-                        apf_copy(&int_part, &temp);
-                        exp_val--;
-                    }
+                    apf_mul(&temp2, &base10, &base10);
+                    apf_copy(&base10, &temp2);
+                    exp_val >>= 1;
                 }
-                apf_copy(&current_token.value, &int_part);
+                
+                /* Apply 10^exp to the number */
+                if (exp_sign) {
+                    apf_div(&temp, &int_part, &pow10);
+                } else {
+                    apf_mul(&temp, &int_part, &pow10);
+                }
+                apf_copy(&current_token.value, &temp);
             } else {
                 /* Not a valid exponent, backtrack */
                 input_ptr = exp_start;
@@ -287,6 +289,7 @@ void next_token(void)
         case '%':
             /* MATLAB-style comment: skip to end of line */
             while (*input_ptr && *input_ptr != '\n') input_ptr++;
+            /* Return TOK_END since this line is done */
             current_token.type = TOK_END;
             return;
         case '\\': current_token.type = TOK_BACKSLASH; input_ptr++; return;
@@ -369,7 +372,44 @@ void next_token(void)
         case ']': current_token.type = TOK_RBRACKET; input_ptr++; return;
         case ':': current_token.type = TOK_COLON; input_ptr++; return;
         case ',': current_token.type = TOK_COMMA; input_ptr++; return;
-        case '\'': current_token.type = TOK_TRANSPOSE; input_ptr++; return;
+        case '\'':
+            /* Check if this is a string literal or transpose
+             * String literal: after ( , ; [ { or at start
+             * Transpose: after ) ] } number or identifier
+             */
+            {
+                /* Look back to see context - simplified: if next char is alphanumeric or digit, it's a string */
+                const char *p = input_ptr + 1;
+                int is_string = 0;
+                
+                /* Check if looks like datetime string: starts with digit */
+                if (*p >= '0' && *p <= '9') {
+                    is_string = 1;
+                }
+                /* Also check for alphabetic start (for other string uses) */
+                if (*p >= 'a' && *p <= 'z') {
+                    is_string = 1;
+                }
+                if (*p >= 'A' && *p <= 'Z') {
+                    is_string = 1;
+                }
+                
+                if (is_string) {
+                    /* Parse string literal */
+                    int len = 0;
+                    input_ptr++;  /* skip opening quote */
+                    while (*input_ptr && *input_ptr != '\'' && len < 63) {
+                        current_token.str_value[len++] = *input_ptr++;
+                    }
+                    current_token.str_value[len] = '\0';
+                    if (*input_ptr == '\'') input_ptr++;  /* skip closing quote */
+                    current_token.type = TOK_STRING;
+                    return;
+                }
+            }
+            current_token.type = TOK_TRANSPOSE;
+            input_ptr++;
+            return;
         case '.':
             /* Check for element-wise operators: .* ./ .^ .' .\ */
             if (*(input_ptr + 1) == '*') {

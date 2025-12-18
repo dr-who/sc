@@ -2,6 +2,10 @@
  * MATLAB-style matrices with arbitrary precision complex elements
  * C89 compliant for Watcom C / DOS
  * 16-bit clean: int is 16-bit, long is 32-bit
+ *
+ * Matrices use arena allocation - data is allocated from a static pool
+ * that gets reset at the start of each REPL command. This allows large
+ * matrices (like iris 150x4) without stack overflow.
  */
 #ifndef MATRIX_H
 #define MATRIX_H
@@ -18,32 +22,69 @@
   #endif
 #endif
 
-/* Maximum matrix dimensions */
-#ifndef MAT_MAX_ROWS
-  #if defined(PLATFORM_DOS) || defined(SCALC_MEDIUM)
-    #define MAT_MAX_ROWS 4
-  #else
-    #define MAT_MAX_ROWS 10
-  #endif
+/* ========== Matrix Arena ========== */
+/* Default arena sizes - can be changed at runtime via mat_memory_init() */
+#if defined(PLATFORM_DOS) || defined(SCALC_MEDIUM)
+  #define MAT_ARENA_DEFAULT  (32 * 1024)       /* 32KB for DOS */
+  #define MAT_PERSIST_DEFAULT (16 * 1024)      /* 16KB persistent */
+#else
+  #define MAT_ARENA_DEFAULT  (1024UL * 1024 * 1024)  /* 1GB for Linux */
+  #define MAT_PERSIST_DEFAULT (1024UL * 1024 * 1024) /* 1GB persistent */
 #endif
-#ifndef MAT_MAX_COLS
-  #if defined(PLATFORM_DOS) || defined(SCALC_MEDIUM)
-    #define MAT_MAX_COLS 4
-  #else
-    #define MAT_MAX_COLS 10
-  #endif
-#endif
-#define MAT_MAX_ELEM (MAT_MAX_ROWS * MAT_MAX_COLS)
 
-/* Matrix structure */
+/* Initialize memory pools (call once at startup, 0 = use defaults) */
+int mat_memory_init(size_t arena_bytes, size_t persist_bytes);
+void mat_memory_free(void);
+
+/* Arena functions */
+void mat_arena_reset(void);              /* Reset at start of each command */
+void *mat_arena_alloc(size_t bytes);     /* Allocate from arena */
+size_t mat_arena_remaining(void);        /* Bytes remaining */
+size_t mat_arena_size(void);             /* Total arena size */
+
+void mat_persist_reset(void);            /* Clear all persistent storage */
+void *mat_persist_alloc(size_t bytes);   /* Allocate persistent storage */
+void mat_persist_free(void *ptr);        /* Mark block as free (simple) */
+size_t mat_persist_remaining(void);      /* Bytes remaining */
+size_t mat_persist_size(void);           /* Total persist size */
+
+/* Maximum dimensions (for validation only, not static allocation) */
+#if defined(PLATFORM_DOS) || defined(SCALC_MEDIUM)
+  #define MAT_MAX_ROWS 64
+  #define MAT_MAX_COLS 64
+  #define MAT_MAX_ELEM 256   /* Max elements for stack-based temporaries */
+#else
+  #define MAT_MAX_ROWS 500000
+  #define MAT_MAX_COLS 1000
+  #define MAT_MAX_ELEM 4096  /* Max elements for stack-based temporaries */
+#endif
+
+/* Matrix structure - data allocated from arena */
 typedef struct {
     int rows;
     int cols;
-    apfc data[MAT_MAX_ELEM];  /* Row-major storage */
+    apfc *data;  /* Pointer to arena-allocated storage */
 } matrix_t;
+
+/* Initialize matrix to empty state */
+#define MAT_INIT_EMPTY(m) do { (m).rows = 0; (m).cols = 0; (m).data = NULL; } while(0)
+
+/* Ensure matrix has space allocated - use before assigning elements */
+#define MAT_ENSURE(m, r, c) do { \
+    if (!(m)->data || (m)->rows != (r) || (m)->cols != (c)) { \
+        mat_zero((m), (r), (c)); \
+    } \
+} while(0)
 
 /* Access element at (row, col) - 0-indexed */
 #define MAT_AT(m, r, c) ((m)->data[(r) * (m)->cols + (c)])
+
+/* Copy matrix to persistent storage (for named variables) */
+int mat_copy_persist(matrix_t *dst, const matrix_t *src);
+int mat_zero_persist(matrix_t *m, int rows, int cols);
+
+/* Resize/allocate matrix from arena - safe to call on existing matrix */
+int mat_resize(matrix_t *m, int rows, int cols);
 
 /* ========== Initialization (matrix.c) ========== */
 void mat_init(matrix_t *m, int rows, int cols);
@@ -119,6 +160,14 @@ void mat_median(apfc *r, const matrix_t *m);
 void mat_sum_rows(matrix_t *r, const matrix_t *m);
 void mat_sum_cols(matrix_t *r, const matrix_t *m);
 
+/* ========== Column-wise Statistics (MATLAB compatible) ========== */
+void mat_mean_cols(matrix_t *r, const matrix_t *m);
+void mat_std_cols(matrix_t *r, const matrix_t *m);
+void mat_cov(matrix_t *r, const matrix_t *m);
+void mat_corrcoef(matrix_t *r, const matrix_t *m);
+void mat_crosstab(matrix_t *r, const matrix_t *a, const matrix_t *b);
+void mat_randindex(apfc *r, const matrix_t *a, const matrix_t *b);
+
 /* ========== QR Decomposition (matrix_linalg.c) ========== */
 int mat_qr(matrix_t *Q, matrix_t *R, const matrix_t *A);
 
@@ -154,6 +203,95 @@ void mat_get_col(matrix_t *r, const matrix_t *m, int col);
 void mat_set_row(matrix_t *m, int row, const matrix_t *v);
 void mat_set_col(matrix_t *m, int col, const matrix_t *v);
 void mat_submat(matrix_t *r, const matrix_t *m, int r1, int r2, int c1, int c2);
+
+/* Array manipulation */
+void mat_fliplr(matrix_t *r, const matrix_t *m);
+void mat_flipud(matrix_t *r, const matrix_t *m);
+void mat_flip(matrix_t *r, const matrix_t *m);
+void mat_rot90(matrix_t *r, const matrix_t *m);
+void mat_triu(matrix_t *r, const matrix_t *m);
+void mat_tril(matrix_t *r, const matrix_t *m);
+void mat_cumsum(matrix_t *r, const matrix_t *m);
+void mat_cumprod(matrix_t *r, const matrix_t *m);
+void mat_diff(matrix_t *r, const matrix_t *m);
+void mat_normalize(matrix_t *r, const matrix_t *m);
+void mat_sort(matrix_t *r, const matrix_t *m);
+void mat_squeeze(matrix_t *r, const matrix_t *m);
+void mat_cummax(matrix_t *r, const matrix_t *m);
+void mat_cummin(matrix_t *r, const matrix_t *m);
+void mat_unique(matrix_t *r, const matrix_t *m);
+void mat_find(matrix_t *r, const matrix_t *m);
+void mat_sortrows(matrix_t *r, const matrix_t *m);
+void mat_rescale(matrix_t *r, const matrix_t *m);
+
+/* Statistics reduce functions */
+void mat_range(apfc *r, const matrix_t *m);
+void mat_rms(apfc *r, const matrix_t *m);
+void mat_geomean(apfc *r, const matrix_t *m);
+void mat_harmmean(apfc *r, const matrix_t *m);
+void mat_sumsq(apfc *r, const matrix_t *m);
+void mat_meansq(apfc *r, const matrix_t *m);
+
+/* Boolean/query reduce functions */
+void mat_any(apfc *r, const matrix_t *m);
+void mat_all(apfc *r, const matrix_t *m);
+void mat_isempty(apfc *r, const matrix_t *m);
+void mat_numel(apfc *r, const matrix_t *m);
+void mat_isscalar(apfc *r, const matrix_t *m);
+void mat_isvector(apfc *r, const matrix_t *m);
+void mat_isrow(apfc *r, const matrix_t *m);
+void mat_iscolumn(apfc *r, const matrix_t *m);
+void mat_ismatrix(apfc *r, const matrix_t *m);
+void mat_issquare(apfc *r, const matrix_t *m);
+void mat_skewness(apfc *r, const matrix_t *m);
+void mat_kurtosis(apfc *r, const matrix_t *m);
+void mat_nnz(apfc *r, const matrix_t *m);
+void mat_mode(apfc *r, const matrix_t *m);
+void mat_iqr(apfc *r, const matrix_t *m);
+
+/* Cumulative functions (matrix -> matrix) */
+void mat_cumsum(matrix_t *r, const matrix_t *m);
+void mat_cumprod(matrix_t *r, const matrix_t *m);
+void mat_cummax(matrix_t *r, const matrix_t *m);
+void mat_cummin(matrix_t *r, const matrix_t *m);
+
+/* Matrix property functions (reduce versions) */
+void mat_numel_r(apfc *r, const matrix_t *m);
+void mat_length_r(apfc *r, const matrix_t *m);
+void mat_ndims_r(apfc *r, const matrix_t *m);
+void mat_nrows_r(apfc *r, const matrix_t *m);
+void mat_ncols_r(apfc *r, const matrix_t *m);
+void mat_width_r(apfc *r, const matrix_t *m);
+void mat_height_r(apfc *r, const matrix_t *m);
+
+/* Higher moment statistics */
+void mat_mad(apfc *r, const matrix_t *m);
+
+/* Matrix transform functions */
+void mat_center(matrix_t *r, const matrix_t *m);
+void mat_gradient(matrix_t *r, const matrix_t *m);
+void mat_diff2(matrix_t *r, const matrix_t *m);
+void mat_detrend(matrix_t *r, const matrix_t *m);
+
+/* ========== MATLAB Compatibility (matrix_linalg.c) ========== */
+void mat_rref(matrix_t *r, const matrix_t *a);       /* Row reduced echelon form */
+void mat_orth(matrix_t *r, const matrix_t *a);       /* Orthonormal basis */
+void mat_poly(matrix_t *r, const matrix_t *a);       /* Characteristic polynomial */
+void mat_roots(matrix_t *r, const matrix_t *coeffs); /* Polynomial roots */
+void mat_expm(matrix_t *r, const matrix_t *a);       /* Matrix exponential */
+void mat_logm(matrix_t *r, const matrix_t *a);       /* Matrix logarithm */
+void mat_fft(matrix_t *r, const matrix_t *a);        /* Fast Fourier Transform */
+void mat_ifft(matrix_t *r, const matrix_t *a);       /* Inverse FFT */
+void mat_meshgrid(matrix_t *X, matrix_t *Y, const matrix_t *x, const matrix_t *y);
+
+/* Data analysis */
+void mat_histcounts(matrix_t *r, const matrix_t *data, int nbins);
+void mat_xcorr(matrix_t *r, const matrix_t *x, const matrix_t *y);
+void mat_xcov(matrix_t *r, const matrix_t *x, const matrix_t *y);
+void mat_isoutlier(matrix_t *r, const matrix_t *data);
+void mat_simpson(matrix_t *r, const matrix_t *y, double h);
+void mat_hess(matrix_t *H, const matrix_t *A);
+void mat_balance(matrix_t *B, const matrix_t *A);
 
 /* ========== Random (matrix_rand.c) ========== */
 void mat_rand_seed(unsigned long seed);

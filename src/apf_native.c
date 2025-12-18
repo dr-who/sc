@@ -11,8 +11,24 @@
 void apf_from_double(apf *r, double d)
 {
     char buf[64];
+    
+    /* Check for special values first - using != comparison to detect NaN */
+    if (d != d) {
+        /* NaN: d != d is only true for NaN */
+        apf_set_nan(r);
+        return;
+    }
     if (d == 0.0) {
         apf_zero(r);
+        return;
+    }
+    /* Check for infinity */
+    if (d > 1e308) {
+        apf_set_inf(r, 0);  /* +Inf */
+        return;
+    }
+    if (d < -1e308) {
+        apf_set_inf(r, 1);  /* -Inf */
         return;
     }
     /* Use sprintf to convert, then parse */

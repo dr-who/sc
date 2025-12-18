@@ -20,19 +20,13 @@ VERSION = 1.0.0
 
 # Source files
 SOURCES = apf.c apfx.c apfc.c apf_native.c \
-          matrix.c matrix_ops.c matrix_linalg.c \
+          matrix.c matrix_ops.c matrix_linalg.c ml.c \
           matrix_rand.c lexer.c parser.c runtime.c format.c commands.c \
           repl.c plot.c rpn.c solver.c mathx.c stats.c tvm.c newton.c \
-          orbital.c optim.c help.c \
-          func_trig.c func_exp.c func_complex.c func_round.c \
-          func_number.c func_special.c func_stats.c func_linalg.c \
-          func_matrix.c func_misc.c func_dispatch.c \
-          main.c
+          orbital.c optim.c help.c func_registry.c datetime.c table.c \
+          scalar_funcs.c matrix_funcs.c decomp_funcs.c saas.c main.c
 
-# Function documentation files (for dependency tracking)
-FUNC_DOCS = func_trig.c func_exp.c func_complex.c func_round.c \
-            func_number.c func_special.c func_stats.c func_linalg.c \
-            func_matrix.c func_misc.c func_dispatch.c
+# Function documentation is now all in func_registry.c
 
 # Object directories for each precision
 OBJDIR_128 = $(OBJDIR)/128
@@ -165,6 +159,9 @@ test: $(TARGET_128)
 	@echo ""
 	@echo "Running core tests..."
 	@./tests/test_main.sh $(TARGET_128)
+	@echo ""
+	@echo "Running help coverage test..."
+	@./tests/test_help_coverage.sh $(TARGET_128)
 
 # Test all versions
 test-all: $(TARGET_128) $(TARGET_256) $(TARGET_64)
@@ -227,3 +224,7 @@ $(OBJDIR_128)/apfc.o $(OBJDIR_256)/apfc.o $(OBJDIR_64)/apfc.o: $(SRCDIR)/apfc.c 
 sample_cluster:
 	@bash samples/pca_cluster_demo.sh bin/sc
 
+
+# Add func_dispatch to objects
+obj/128/func_dispatch.o: src/func_dispatch.c src/func_dispatch.h
+	$(CC) $(CFLAGS) $(CFLAGS_128) -c src/func_dispatch.c -o obj/128/func_dispatch.o
