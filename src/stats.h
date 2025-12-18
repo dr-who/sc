@@ -15,6 +15,9 @@
 #ifdef HAVE_STATS
 
 #include "apf.h"
+#ifdef HAVE_MATRIX
+#include "matrix.h"
+#endif
 
 /* Maximum data points for median and t-test */
 #ifndef STATS_MAX_DATA
@@ -147,6 +150,11 @@ double stat_rsquare(const double *y_actual, const double *y_pred, int n);
 
 /* Numerical methods */
 double num_simpson(const double *y, int n, double h);
+
+#ifdef HAVE_MATRIX
+/* ASCII scatter plot */
+void mat_scatter(const matrix_t *x, const matrix_t *y, const matrix_t *groups, const char *chars);
+#endif
 
 #endif /* HAVE_STATS */
 #endif /* STATS_H */

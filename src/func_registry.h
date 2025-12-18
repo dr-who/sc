@@ -222,7 +222,7 @@ typedef enum {
     
     /* Data science */
     FH_PCA, FH_PCAREDUCE,
-    FH_KMEANS, FH_SILHOUETTE, FH_PDIST,
+    FH_KMEANS, FH_SCATTER, FH_LINEPLOT, FH_SILHOUETTE, FH_PDIST,
     FH_MANHATTAN,
     
     /* Text analysis */

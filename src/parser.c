@@ -12697,6 +12697,171 @@ static int parse_value_factor(value_t *result)
                 return 1;
             }
             
+            /* lineplot(y) or lineplot(x, y) - ASCII line plot */
+            if (str_eq(name, "lineplot")) {
+                value_t x_val, y_val;
+                matrix_t *x_ptr = NULL;
+                int i, px, py;
+                double xmin, xmax, ymin, ymax;
+                char plot[20][65];
+                int has_x = 0;
+                
+                next_token();
+                if (!parse_value(&y_val)) return 0;
+                if (y_val.type != VAL_MATRIX) {
+                    printf("Error: lineplot requires vector\n");
+                    return 0;
+                }
+                
+                /* Check for optional x argument */
+                if (current_token.type == TOK_COMMA) {
+                    x_val = y_val;  /* First arg is x */
+                    x_ptr = &x_val.v.matrix;
+                    has_x = 1;
+                    next_token();
+                    if (!parse_value(&y_val)) return 0;
+                    if (y_val.type != VAL_MATRIX) {
+                        printf("Error: lineplot y must be vector\n");
+                        return 0;
+                    }
+                }
+                
+                if (current_token.type != TOK_RPAREN) {
+                    printf("Error: expected ')'\n");
+                    return 0;
+                }
+                next_token();
+                
+                /* Find bounds */
+                ymin = ymax = apf_to_double(&MAT_AT(&y_val.v.matrix, 0, 0).re);
+                if (has_x) {
+                    xmin = xmax = apf_to_double(&MAT_AT(x_ptr, 0, 0).re);
+                } else {
+                    xmin = 1; xmax = y_val.v.matrix.rows;
+                }
+                
+                for (i = 0; i < y_val.v.matrix.rows; i++) {
+                    double y = apf_to_double(&MAT_AT(&y_val.v.matrix, i, 0).re);
+                    if (y < ymin) ymin = y;
+                    if (y > ymax) ymax = y;
+                    if (has_x) {
+                        double x = apf_to_double(&MAT_AT(x_ptr, i, 0).re);
+                        if (x < xmin) xmin = x;
+                        if (x > xmax) xmax = x;
+                    }
+                }
+                
+                /* Add margins */
+                if (ymax == ymin) { ymax += 1; ymin -= 1; }
+                { double m = (ymax - ymin) * 0.05; ymin -= m; ymax += m; }
+                if (xmax == xmin) xmax = xmin + 1;
+                
+                /* Initialize plot */
+                for (py = 0; py < 20; py++) {
+                    for (px = 0; px < 64; px++) {
+                        plot[py][px] = ' ';
+                    }
+                    plot[py][64] = '\0';
+                }
+                
+                /* Draw axes */
+                for (px = 0; px < 60; px++) plot[19][px] = '-';
+                for (py = 0; py < 20; py++) plot[py][0] = '|';
+                plot[19][0] = '+';
+                
+                /* Plot points and connect with lines */
+                for (i = 0; i < y_val.v.matrix.rows; i++) {
+                    double x = has_x ? apf_to_double(&MAT_AT(x_ptr, i, 0).re) : (i + 1);
+                    double y = apf_to_double(&MAT_AT(&y_val.v.matrix, i, 0).re);
+                    
+                    px = 1 + (int)((x - xmin) / (xmax - xmin) * 58);
+                    py = 18 - (int)((y - ymin) / (ymax - ymin) * 18);
+                    
+                    if (px >= 1 && px < 60 && py >= 0 && py < 19) {
+                        plot[py][px] = '*';
+                    }
+                }
+                
+                /* Print plot */
+                printf("\n");
+                printf("  %8.2f |%s\n", ymax, plot[0] + 1);
+                for (py = 1; py < 19; py++) {
+                    if (py == 9) {
+                        printf("  %8.2f |%s\n", (ymax + ymin) / 2, plot[py] + 1);
+                    } else {
+                        printf("           |%s\n", plot[py] + 1);
+                    }
+                }
+                printf("  %8.2f +%s\n", ymin, plot[19] + 1);
+                printf("           %-8.2f%50.2f\n\n", xmin, xmax);
+                
+                result->type = VAL_SCALAR;
+                apf_zero(&result->v.scalar.re);
+                apf_zero(&result->v.scalar.im);
+                return 1;
+            }
+            
+            /* scatter(x, y) or scatter(x, y, groups) or scatter(x, y, groups, "chars") */
+            if (str_eq(name, "scatter")) {
+                extern void mat_scatter(const matrix_t *x, const matrix_t *y, const matrix_t *groups, const char *chars);
+                value_t x_val, y_val;
+                matrix_t *groups_ptr = NULL;
+                matrix_t groups_mat;
+                char chars[64] = "";
+                
+                next_token();
+                if (!parse_value(&x_val)) return 0;
+                if (x_val.type != VAL_MATRIX) {
+                    printf("Error: scatter requires vector x\n");
+                    return 0;
+                }
+                
+                if (current_token.type != TOK_COMMA) {
+                    printf("Error: scatter requires (x, y) or (x, y, groups)\n");
+                    return 0;
+                }
+                next_token();
+                if (!parse_value(&y_val)) return 0;
+                if (y_val.type != VAL_MATRIX) {
+                    printf("Error: scatter requires vector y\n");
+                    return 0;
+                }
+                
+                /* Optional groups argument */
+                if (current_token.type == TOK_COMMA) {
+                    next_token();
+                    if (!parse_value(&pv_arg)) return 0;
+                    if (pv_arg.type == VAL_MATRIX) {
+                        groups_mat = pv_arg.v.matrix;
+                        groups_ptr = &groups_mat;
+                    }
+                }
+                
+                /* Optional chars argument */
+                if (current_token.type == TOK_COMMA) {
+                    next_token();
+                    if (current_token.type == TOK_STRING) {
+                        strncpy(chars, current_token.str_value, 63);
+                        chars[63] = '\0';
+                        next_token();
+                    }
+                }
+                
+                if (current_token.type != TOK_RPAREN) {
+                    printf("Error: expected ')'\n");
+                    return 0;
+                }
+                next_token();
+                
+                mat_scatter(&x_val.v.matrix, &y_val.v.matrix, groups_ptr, chars);
+                
+                /* Return empty result (scatter is a display function) */
+                result->type = VAL_SCALAR;
+                apf_zero(&result->v.scalar.re);
+                apf_zero(&result->v.scalar.im);
+                return 1;
+            }
+            
             /* toprevenue(data, n) - top N customers by revenue */
             if (str_eq(name, "toprevenue")) {
                 extern void mat_toprevenue(matrix_t *result, const matrix_t *data, int top_n);

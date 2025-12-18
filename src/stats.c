@@ -1825,3 +1825,135 @@ void mat_signrank(matrix_t *r, const matrix_t *x, const matrix_t *y)
     apf_from_double(&r->data[0].re, W);
     apf_from_double(&r->data[1].re, z);
 }
+
+/* ========== ASCII Scatter Plot ========== */
+
+/* scatter - ASCII scatter plot of x vs y with optional group labels
+ * scatter(x, y)           - basic scatter plot with '*'
+ * scatter(x, y, groups)   - colored by group (1,2,3... shown as different chars)
+ * scatter(x, y, groups, chars) - use custom characters (e.g., "ABC" or "123")
+ */
+void mat_scatter(const matrix_t *x, const matrix_t *y, const matrix_t *groups, const char *chars)
+{
+    int i, px, py;
+    int width = 60, height = 20;
+    char plot[25][70];
+    double xmin = 1e30, xmax = -1e30, ymin = 1e30, ymax = -1e30;
+    int n;
+    const char *default_chars = "123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const char *use_chars;
+    
+    if (!x || !y || x->rows == 0) {
+        printf("Error: scatter requires x and y vectors\n");
+        return;
+    }
+    
+    n = x->rows;
+    if (y->rows != n) {
+        printf("Error: x and y must have same length\n");
+        return;
+    }
+    
+    use_chars = (chars && chars[0]) ? chars : default_chars;
+    
+    /* Find data bounds */
+    for (i = 0; i < n; i++) {
+        double xv = apf_to_double(&MAT_AT(x, i, 0).re);
+        double yv = apf_to_double(&MAT_AT(y, i, 0).re);
+        if (xv < xmin) xmin = xv;
+        if (xv > xmax) xmax = xv;
+        if (yv < ymin) ymin = yv;
+        if (yv > ymax) ymax = yv;
+    }
+    
+    /* Add 5% margins */
+    {
+        double xmargin = (xmax - xmin) * 0.05;
+        double ymargin = (ymax - ymin) * 0.05;
+        if (xmargin < 0.1) xmargin = 0.1;
+        if (ymargin < 0.1) ymargin = 0.1;
+        xmin -= xmargin; xmax += xmargin;
+        ymin -= ymargin; ymax += ymargin;
+    }
+    
+    /* Initialize plot grid */
+    for (py = 0; py < height + 2; py++) {
+        for (px = 0; px < width + 8; px++) {
+            plot[py][px] = ' ';
+        }
+        plot[py][width + 8] = '\0';
+    }
+    
+    /* Draw border/axes */
+    for (px = 7; px < width + 7; px++) {
+        plot[0][px] = '-';
+        plot[height + 1][px] = '-';
+    }
+    for (py = 0; py <= height + 1; py++) {
+        plot[py][6] = '|';
+        plot[py][width + 7] = '|';
+    }
+    plot[0][6] = '+'; plot[0][width + 7] = '+';
+    plot[height + 1][6] = '+'; plot[height + 1][width + 7] = '+';
+    
+    /* Plot points */
+    for (i = 0; i < n; i++) {
+        double xv = apf_to_double(&MAT_AT(x, i, 0).re);
+        double yv = apf_to_double(&MAT_AT(y, i, 0).re);
+        int grp = 0;
+        char marker;
+        
+        if (groups && groups->rows > i) {
+            grp = (int)apf_to_double(&MAT_AT(groups, i, 0).re) - 1;
+            if (grp < 0) grp = 0;
+        }
+        
+        /* Get marker character */
+        if (grp < (int)strlen(use_chars)) {
+            marker = use_chars[grp];
+        } else {
+            marker = '*';
+        }
+        
+        px = 7 + (int)((xv - xmin) / (xmax - xmin) * (width - 1));
+        py = height - (int)((yv - ymin) / (ymax - ymin) * (height - 1));
+        
+        if (px >= 7 && px < width + 7 && py >= 1 && py <= height) {
+            plot[py][px] = marker;
+        }
+    }
+    
+    /* Print plot with Y axis labels */
+    printf("\n");
+    for (py = 0; py <= height + 1; py++) {
+        if (py == 1) {
+            printf("%6.2f %s\n", ymax, plot[py] + 7);
+        } else if (py == height / 2 + 1) {
+            printf("%6.2f %s\n", (ymax + ymin) / 2, plot[py] + 7);
+        } else if (py == height) {
+            printf("%6.2f %s\n", ymin, plot[py] + 7);
+        } else {
+            printf("       %s\n", plot[py] + 7);
+        }
+    }
+    
+    /* X axis labels */
+    printf("       %-6.2f", xmin);
+    for (i = 0; i < width - 24; i++) printf(" ");
+    printf("%6.2f\n", xmax);
+    printf("\n");
+    
+    /* Legend if groups provided */
+    if (groups && groups->rows > 0) {
+        int max_grp = 0;
+        for (i = 0; i < groups->rows; i++) {
+            int g = (int)apf_to_double(&MAT_AT(groups, i, 0).re);
+            if (g > max_grp) max_grp = g;
+        }
+        printf("Legend: ");
+        for (i = 0; i < max_grp && i < (int)strlen(use_chars); i++) {
+            printf(" %c=Group%d ", use_chars[i], i + 1);
+        }
+        printf("\n");
+    }
+}

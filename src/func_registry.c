@@ -2462,7 +2462,17 @@ static const FuncEntry func_registry[] = {
     {"kmeans", FH_KMEANS, 2, 2, FF_MATRIX, "Data Science", "kmeans(X, k)",
      "K-means clustering.",
      {"kmeans([1,1;1,2;8,8;8,9], 2)", NULL, NULL, NULL, NULL, NULL},
-     "pdist, silhouette"},
+     "pdist, silhouette, scatter, lineplot"},
+    
+    {"lineplot", FH_LINEPLOT, 1, 2, FF_NONE, "Data Science", "lineplot(y) or lineplot(x, y)",
+     "ASCII line plot of vector y, optionally with x values.",
+     {"lineplot(sin(linspace(0,2*pi,50)'))", "lineplot(1:10, rand(10,1))", NULL, NULL, NULL, NULL},
+     "scatter, plot"},
+    
+    {"scatter", FH_SCATTER, 2, 4, FF_NONE, "Data Science", "scatter(x, y, [groups], [chars])",
+     "ASCII scatter plot. Groups color points (1,2,3...). Chars sets markers.",
+     {"scatter(rand(20,1), rand(20,1))", NULL, NULL, NULL, NULL, NULL},
+     "kmeans, pca"},
     
     {"silhouette", FH_SILHOUETTE, 2, 2, FF_MATRIX, "Data Science", "silhouette(X, idx)",
      "Silhouette values for clustering quality.",
