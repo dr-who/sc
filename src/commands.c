@@ -2054,17 +2054,25 @@ void cmd_demo_fisheriris(void)
 #ifdef HAVE_NAMED_VARS
     extern int cmd_load_dataset(const char *name);
     extern int get_named_var(const char *name, value_t *result);
+    extern int set_named_matrix(const char *name, const matrix_t *val);
+    extern int mat_kmeans(matrix_t *idx, matrix_t *centroids, const matrix_t *X, int k);
     value_t data_val, labels_val;
-    matrix_t *meas;
+    matrix_t *meas, idx, centroids;
     int i, j;
+    int cluster_counts[3] = {0, 0, 0};
+    int species_counts[3][3] = {{0}};  /* cluster x species */
     
     printf("\n");
-    printf("========================================\n");
-    printf("  Fisher's Iris Dataset Demo\n");
-    printf("========================================\n\n");
-    printf("This demo shows commands you can type interactively.\n\n");
+    printf("╔══════════════════════════════════════════════════════════════════╗\n");
+    printf("║           FISHER'S IRIS DATASET DEMO                             ║\n");
+    printf("║        K-Means Clustering & Visualization                        ║\n");
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n");
     
-    /* Load the dataset using CSV loader */
+    /* Load the dataset */
+    printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    printf("LOADING DATA\n");
+    printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
+    
     printf(">>> load iris\n");
     mat_arena_reset();
     if (!cmd_load_dataset("iris")) {
@@ -2080,45 +2088,208 @@ void cmd_demo_fisheriris(void)
         return;
     }
     meas = &data_val.v.matrix;
+    set_named_matrix("meas", meas);
     
-    /* Rename to standard iris names */
-    {
-        extern int set_named_matrix(const char *name, const matrix_t *val);
-        set_named_matrix("meas", meas);
-        if (get_named_var("labels", &labels_val) && labels_val.type == VAL_MATRIX) {
-            set_named_matrix("species", &labels_val.v.matrix);
-        }
+    if (get_named_var("labels", &labels_val) && labels_val.type == VAL_MATRIX) {
+        set_named_matrix("species", &labels_val.v.matrix);
     }
     
-    /* Show size commands */
-    printf(">>> rows(meas)\n");
-    printf("= %d\n\n", meas->rows);
+    printf("Data: %d samples x %d features\n", meas->rows, meas->cols);
+    printf("Features: Sepal Length, Sepal Width, Petal Length, Petal Width\n");
+    printf("Species:  1=setosa, 2=versicolor, 3=virginica (50 each)\n\n");
     
-    printf(">>> cols(meas)\n");
-    printf("= %d\n\n", meas->cols);
+    /* ================================================================
+     * EXPLORATORY STATISTICS
+     * ================================================================ */
+    printf("╔══════════════════════════════════════════════════════════════════╗\n");
+    printf("║  1. EXPLORATORY STATISTICS                                       ║\n");
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n");
     
-    /* First few rows */
-    printf(">>> meas(1:5,:)   %% First 5 flowers\n");
-    for (i = 0; i < 5 && i < meas->rows; i++) {
-        for (j = 0; j < meas->cols; j++) {
-            char buf[32];
-            apf_to_str(buf, sizeof(buf), &MAT_AT(meas, i, j).re, 2);
-            printf("  %s", buf);
+    printf(">>> mean(meas)  %% Column means\n");
+    {
+        double means[4] = {0};
+        for (j = 0; j < 4; j++) {
+            for (i = 0; i < meas->rows; i++) {
+                means[j] += apf_to_double(&MAT_AT(meas, i, j).re);
+            }
+            means[j] /= meas->rows;
+        }
+        printf("    SepalLen  SepalWid  PetalLen  PetalWid\n");
+        printf("    %7.2f   %7.2f   %7.2f   %7.2f\n\n", means[0], means[1], means[2], means[3]);
+    }
+    
+    printf(">>> std(meas)   %% Column standard deviations\n");
+    {
+        double means[4] = {0}, stds[4] = {0};
+        for (j = 0; j < 4; j++) {
+            for (i = 0; i < meas->rows; i++) {
+                means[j] += apf_to_double(&MAT_AT(meas, i, j).re);
+            }
+            means[j] /= meas->rows;
+            for (i = 0; i < meas->rows; i++) {
+                double d = apf_to_double(&MAT_AT(meas, i, j).re) - means[j];
+                stds[j] += d * d;
+            }
+            stds[j] = sqrt(stds[j] / (meas->rows - 1));
+        }
+        printf("    SepalLen  SepalWid  PetalLen  PetalWid\n");
+        printf("    %7.2f   %7.2f   %7.2f   %7.2f\n\n", stds[0], stds[1], stds[2], stds[3]);
+    }
+    
+    /* ================================================================
+     * K-MEANS CLUSTERING
+     * ================================================================ */
+    printf("╔══════════════════════════════════════════════════════════════════╗\n");
+    printf("║  2. K-MEANS CLUSTERING (k=3)                                     ║\n");
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n");
+    
+    printf(">>> [idx, C] = kmeans(meas, 3)  %% Cluster into 3 groups\n\n");
+    mat_kmeans(&idx, &centroids, meas, 3);
+    set_named_matrix("idx", &idx);
+    set_named_matrix("C", &centroids);
+    
+    /* Count clusters */
+    for (i = 0; i < idx.rows; i++) {
+        int c = (int)apf_to_double(&MAT_AT(&idx, i, 0).re) - 1;
+        if (c >= 0 && c < 3) cluster_counts[c]++;
+    }
+    
+    printf("Cluster sizes:\n");
+    printf("    Cluster 1: %d samples\n", cluster_counts[0]);
+    printf("    Cluster 2: %d samples\n", cluster_counts[1]);
+    printf("    Cluster 3: %d samples\n\n", cluster_counts[2]);
+    
+    printf(">>> C  %% Cluster centroids\n");
+    printf("           SepalLen  SepalWid  PetalLen  PetalWid\n");
+    for (i = 0; i < 3; i++) {
+        printf("    C%d:    ", i+1);
+        for (j = 0; j < 4; j++) {
+            printf("%7.2f   ", apf_to_double(&MAT_AT(&centroids, i, j).re));
         }
         printf("\n");
     }
     printf("\n");
     
-    printf(">>> species(1:5)\n");
-    printf("  1  1  1  1  1  (all setosa)\n\n");
+    /* Compare clusters to actual species */
+    if (get_named_var("labels", &labels_val) && labels_val.type == VAL_MATRIX) {
+        printf("Cluster vs Actual Species (confusion matrix):\n\n");
+        
+        for (i = 0; i < idx.rows; i++) {
+            int c = (int)apf_to_double(&MAT_AT(&idx, i, 0).re) - 1;
+            int s = (int)apf_to_double(&MAT_AT(&labels_val.v.matrix, i, 0).re) - 1;
+            if (c >= 0 && c < 3 && s >= 0 && s < 3) {
+                species_counts[c][s]++;
+            }
+        }
+        
+        printf("              Setosa  Versicolor  Virginica\n");
+        printf("    ─────────────────────────────────────────\n");
+        for (i = 0; i < 3; i++) {
+            printf("    Cluster %d:  %3d       %3d         %3d\n", 
+                   i+1, species_counts[i][0], species_counts[i][1], species_counts[i][2]);
+        }
+        printf("\n");
+        
+        /* Calculate accuracy */
+        {
+            int correct = 0;
+            for (i = 0; i < 3; i++) {
+                int max_val = species_counts[i][0];
+                if (species_counts[i][1] > max_val) max_val = species_counts[i][1];
+                if (species_counts[i][2] > max_val) max_val = species_counts[i][2];
+                correct += max_val;
+            }
+            printf("    Clustering accuracy: %.1f%% (%d/150 correctly grouped)\n\n", 
+                   correct * 100.0 / 150, correct);
+        }
+    }
     
-    printf("--- Try These Commands ---\n");
-    printf(">>> mean(meas)          %% Mean of each column\n");
-    printf(">>> std(meas)           %% Standard deviation\n");
-    printf(">>> corr(meas)          %% Correlation matrix\n");
-    printf(">>> cov(meas)           %% Covariance matrix\n");
-    printf(">>> [coeff,score,latent] = pca(meas)  %% PCA\n");
-    printf(">>> [idx,C] = kmeans(meas, 3)         %% K-means clustering\n\n");
+    /* ================================================================
+     * SCATTER PLOT
+     * ================================================================ */
+    printf("╔══════════════════════════════════════════════════════════════════╗\n");
+    printf("║  3. SCATTER PLOT (Petal Length vs Petal Width)                   ║\n");
+    printf("╚══════════════════════════════════════════════════════════════════╝\n\n");
+    
+    printf(">>> scatter(meas(:,3), meas(:,4), idx)  %% Colored by cluster\n\n");
+    
+    {
+        /* ASCII scatter plot of petal length (col 3) vs petal width (col 4) */
+        char plot[25][70];
+        double xmin = 1e9, xmax = -1e9, ymin = 1e9, ymax = -1e9;
+        int px, py;
+        const char markers[] = "123";  /* Cluster markers */
+        
+        /* Find bounds */
+        for (i = 0; i < meas->rows; i++) {
+            double x = apf_to_double(&MAT_AT(meas, i, 2).re);  /* Petal length */
+            double y = apf_to_double(&MAT_AT(meas, i, 3).re);  /* Petal width */
+            if (x < xmin) xmin = x;
+            if (x > xmax) xmax = x;
+            if (y < ymin) ymin = y;
+            if (y > ymax) ymax = y;
+        }
+        
+        /* Add margins */
+        xmin -= 0.2; xmax += 0.2;
+        ymin -= 0.1; ymax += 0.1;
+        
+        /* Initialize plot */
+        for (py = 0; py < 22; py++) {
+            for (px = 0; px < 65; px++) {
+                plot[py][px] = ' ';
+            }
+            plot[py][65] = '\0';
+        }
+        
+        /* Draw axes */
+        for (px = 4; px < 65; px++) plot[20][px] = '-';
+        for (py = 0; py < 21; py++) plot[py][4] = '|';
+        plot[20][4] = '+';
+        
+        /* Plot points */
+        for (i = 0; i < meas->rows; i++) {
+            double x = apf_to_double(&MAT_AT(meas, i, 2).re);
+            double y = apf_to_double(&MAT_AT(meas, i, 3).re);
+            int cluster = (int)apf_to_double(&MAT_AT(&idx, i, 0).re);
+            
+            px = 5 + (int)((x - xmin) / (xmax - xmin) * 58);
+            py = 19 - (int)((y - ymin) / (ymax - ymin) * 19);
+            
+            if (px >= 5 && px < 64 && py >= 0 && py < 20) {
+                plot[py][px] = markers[cluster - 1];
+            }
+        }
+        
+        /* Y-axis labels */
+        printf("    Petal Width (cm)\n");
+        printf("    %.1f ┐\n", ymax);
+        for (py = 0; py < 22; py++) {
+            if (py == 10) {
+                printf("    %.1f │%s\n", (ymax + ymin) / 2, plot[py] + 5);
+            } else if (py == 20) {
+                printf("    %.1f └%s\n", ymin, plot[py] + 5);
+            } else {
+                printf("        │%s\n", plot[py] + 5);
+            }
+        }
+        printf("         %.1f                              %.1f\n", xmin, xmax);
+        printf("                      Petal Length (cm)\n\n");
+        
+        printf("    Legend:  1 = Cluster 1    2 = Cluster 2    3 = Cluster 3\n\n");
+    }
+    
+    /* ================================================================
+     * TRY THESE COMMANDS
+     * ================================================================ */
+    printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    printf("TRY THESE COMMANDS:\n");
+    printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
+    printf(">>> scatter(meas(:,1), meas(:,2), idx)   %% Sepal dimensions\n");
+    printf(">>> [coeff, score] = pca(meas)           %% Principal components\n");
+    printf(">>> scatter(score(:,1), score(:,2), idx) %% PCA projection\n");
+    printf(">>> corr(meas)                           %% Correlation matrix\n");
+    printf(">>> [idx5, C5] = kmeans(meas, 5)         %% Try k=5 clusters\n\n");
     
 #else
     printf("Error: Named variables not enabled\n");
