@@ -801,7 +801,7 @@ int table_groupsummary_binned(table_t *result, const table_t *src,
                               const char *group_col, const char *bin_type,
                               const char *method, const char *data_col)
 {
-    matrix_t *grp_data, *val_data;
+    matrix_t *grp_data, *val_data = NULL;
     int grp_idx, val_idx;
     int i, j, n_groups;
     long *group_keys;

@@ -3197,62 +3197,62 @@ static const FuncEntry func_registry[] = {
     /* ===== SAAS METRICS ===== */
     {"mrr", FH_MRR, 1, 1, FF_MATRIX, "SaaS", "mrr(data)",
      "Monthly Recurring Revenue from billing data [timestamp, custid, ..., billing].",
-     {"load hourlybilling", "m = mrr(data)", "mean(m(:,2))", NULL, NULL, NULL},
+     {"mrr(rand(100,4))", "size(mrr(rand(1000,4)))", NULL, NULL, NULL, NULL},
      "arpu, mrrbridge, nrr"},
     
     {"arpu", FH_ARPU, 1, 1, FF_MATRIX, "SaaS", "arpu(data)",
      "Average Revenue Per User = MRR / active_customers per month.",
-     {"a = arpu(data)", "mean(a(:,2))", NULL, NULL, NULL, NULL},
+     {"arpu(rand(100,4))", NULL, NULL, NULL, NULL, NULL},
      "mrr, customercount"},
     
     {"mrrbridge", FH_MRRBRIDGE, 1, 1, FF_MATRIX, "SaaS", "mrrbridge(data)",
      "MRR movement: [month, new, expansion, contraction, churned, net].",
-     {"b = mrrbridge(data)", NULL, NULL, NULL, NULL, NULL},
+     {"mrrbridge(rand(100,4))", NULL, NULL, NULL, NULL, NULL},
      "mrr, nrr, churn"},
     
     {"customercount", FH_CUSTOMERCOUNT, 1, 1, FF_MATRIX, "SaaS", "customercount(data)",
      "Count unique active customers per month.",
-     {"c = customercount(data)", "max(c(:,2))", NULL, NULL, NULL, NULL},
+     {"customercount(rand(100,4))", NULL, NULL, NULL, NULL, NULL},
      "newcustomers, churn"},
     
     {"newcustomers", FH_NEWCUSTOMERS, 1, 1, FF_MATRIX, "SaaS", "newcustomers(data)",
      "Count customers with first appearance each month.",
-     {"n = newcustomers(data)", "sum(n(:,2))", NULL, NULL, NULL, NULL},
+     {"newcustomers(rand(100,4))", NULL, NULL, NULL, NULL, NULL},
      "churn, reactivated"},
     
     {"churn", FH_CHURN, 1, 1, FF_MATRIX, "SaaS", "churn(data)",
      "Customers who churned (active last month, not this month).",
-     {"ch = churn(data)", "sum(ch(:,2))", NULL, NULL, NULL, NULL},
+     {"churn(rand(100,4))", NULL, NULL, NULL, NULL, NULL},
      "churnrate, nrr"},
     
     {"reactivated", FH_REACTIVATED, 1, 1, FF_MATRIX, "SaaS", "reactivated(data)",
      "Returning customers (not active last month, active now, not new).",
-     {"re = reactivated(data)", NULL, NULL, NULL, NULL, NULL},
+     {"reactivated(rand(100,4))", NULL, NULL, NULL, NULL, NULL},
      "churn, newcustomers"},
     
     {"churnrate", FH_CHURNRATE, 1, 1, FF_MATRIX, "SaaS", "churnrate(data)",
      "Logo churn rate: churned / previous_customers * 100 (percent).",
-     {"cr = churnrate(data)", "mean(cr(2:rows(cr),2))", NULL, NULL, NULL, NULL},
+     {"churnrate(rand(100,4))", NULL, NULL, NULL, NULL, NULL},
      "churn, nrr, grr"},
     
     {"nrr", FH_NRR, 1, 1, FF_MATRIX, "SaaS", "nrr(data)",
      "Net Revenue Retention %. >100% means existing customers growing.",
-     {"nr = nrr(data)", "mean(nr(2:rows(nr),2))", NULL, NULL, NULL, NULL},
+     {"nrr(rand(100,4))", NULL, NULL, NULL, NULL, NULL},
      "grr, churnrate"},
     
     {"grr", FH_GRR, 1, 1, FF_MATRIX, "SaaS", "grr(data)",
      "Gross Revenue Retention %. Like NRR but ignores expansion (max 100%).",
-     {"gr = grr(data)", NULL, NULL, NULL, NULL, NULL},
+     {"grr(rand(100,4))", NULL, NULL, NULL, NULL, NULL},
      "nrr, churnrate"},
     
     {"retention", FH_RETENTION, 1, 1, FF_MATRIX, "SaaS", "retention(data)",
      "Cohort retention matrix. Row=cohort, Col=months since start, Value=%.",
-     {"R = retention(data)", "R(1:6,1:6)", NULL, NULL, NULL, NULL},
+     {"retention(rand(100,4))", NULL, NULL, NULL, NULL, NULL},
      "churn, tenure"},
     
     {"tenure", FH_TENURE, 1, 1, FF_MATRIX, "SaaS", "tenure(data)",
      "Customer tenure: [customerid, months, first_month, last_month].",
-     {"t = tenure(data)", "mean(t(:,2))", "median(t(:,2))", NULL, NULL, NULL},
+     {"tenure(rand(100,4))", NULL, NULL, NULL, NULL, NULL},
      "retention, churn"},
     
     /* ===== FINANCIAL FUNCTIONS ===== */
@@ -3498,6 +3498,7 @@ void func_demo(const char *name)
     const char *ex;
     size_t len;
     extern void mat_arena_reset(void);
+    extern int cmd_load_dataset(const char *name);
     
     if (!f) {
         printf("Unknown function: %s\n", name);
@@ -3506,6 +3507,25 @@ void func_demo(const char *name)
     
     printf("\n=== Demo: %s ===\n", f->name);
     printf("Description: %s\n\n", f->description);
+    
+    /* Special handling for SaaS category - load billing data first */
+    if (str_eq(f->category, "SaaS")) {
+        printf(">>> load hourlybilling  %% Loading SaaS demo data...\n");
+        mat_arena_reset();
+        if (!cmd_load_dataset("hourlybilling")) {
+            printf("Error: Could not load hourlybilling dataset.\n");
+            printf("Generate with: ./gen_hourly_billing.sh datasets/hourlybilling.csv 50000\n\n");
+            return;
+        }
+        printf("\n");
+        
+        /* Now run the function on data */
+        sprintf(expr, "%s(data)", f->name);
+        printf(">>> %s\n", expr);
+        eval_expr_line(expr, 0);
+        printf("\n");
+        return;
+    }
     
     for (i = 0; i < 6 && f->examples[i] != NULL; i++) {
         ex = f->examples[i];
