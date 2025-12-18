@@ -16,6 +16,9 @@ static clock_t tic_start = 0;
  * Returns: 0 for success/true, 1 for boolean false */
 int eval_expr_line(const char *line, int quiet);
 
+/* Flag to suppress result printing (used by planet(), etc.) */
+int suppress_result_print = 0;
+
 /* Forward declaration for named matrix - needed for Watcom C */
 #ifdef HAVE_NAMED_VARS
 extern int set_named_matrix(const char *name, const matrix_t *val);
@@ -227,9 +230,9 @@ int main(int argc, char *argv[])
         /* tscatter - interactive solar system viewer */
         if (str_starts(input, "tscatter") || str_starts(input, "planets") || str_starts(input, "solar")) {
             extern int do_tscatter(const char **bodies, int num_bodies, const char *follow);
-            static const char *inner[] = {"sun", "mercury", "venus", "earth", "mars"};
+            static const char *inner[] = {"sun", "mercury", "venus", "earth", "moon", "mars"};
             static const char *outer[] = {"sun", "jupiter", "saturn", "uranus", "neptune"};
-            static const char *all[] = {"sun", "mercury", "venus", "earth", "mars", "jupiter", "saturn"};
+            static const char *all[] = {"sun", "mercury", "venus", "earth", "moon", "mars", "jupiter", "saturn"};
             static const char *moon_view[] = {"earth", "moon"};
             const char *arg = input;
             
@@ -238,16 +241,16 @@ int main(int argc, char *argv[])
             while (*arg == ' ') arg++;
             
             if (str_starts(arg, "inner")) {
-                do_tscatter(inner, 5, "sun");
+                do_tscatter(inner, 6, "sun");
             } else if (str_starts(arg, "outer")) {
                 do_tscatter(outer, 5, "sun");
             } else if (str_starts(arg, "moon")) {
                 do_tscatter(moon_view, 2, "earth,moon");
             } else if (str_starts(arg, "all") || *arg == '\0') {
-                do_tscatter(all, 7, "sun");
+                do_tscatter(all, 8, "sun");
             } else {
                 /* Custom: parse body names */
-                do_tscatter(all, 7, "sun");
+                do_tscatter(all, 8, "sun");
             }
             continue;
         }
@@ -2206,7 +2209,7 @@ int main(int argc, char *argv[])
                 }
             }
             
-            if (has_result) {
+            if (has_result && !suppress_result_print) {
                 if ((is_equality_check || result_is_boolean) && last_result.type == VAL_SCALAR) {
                     /* Print true/false for equality checks and boolean functions */
                     int val = apf_is_zero(&last_result.v.scalar.re) ? 0 : 1;
@@ -2222,6 +2225,7 @@ int main(int argc, char *argv[])
                     last_bool_result = 1;  /* Non-boolean: reset to true */
                 }
             }
+            suppress_result_print = 0;  /* Reset for next command */
         }
     }
 
@@ -2239,6 +2243,7 @@ int eval_expr_line(const char *line, int quiet)
     int is_equality_check = 0;
     
     result_is_boolean = 0;  /* Reset for this expression */
+    suppress_result_print = 0;  /* Reset suppress flag */
     result.type = VAL_SCALAR;
     apf_zero(&result.v.scalar.re);
     apf_zero(&result.v.scalar.im);
@@ -2709,7 +2714,7 @@ int eval_expr_line(const char *line, int quiet)
     }
     
     /* Print final result */
-    if (has_result && quiet != 2) {  /* quiet=2 means totally silent */
+    if (has_result && quiet != 2 && !suppress_result_print) {  /* quiet=2 means totally silent */
         if ((is_equality_check || result_is_boolean) && result.type == VAL_SCALAR) {
             int val = apf_is_zero(&result.v.scalar.re) ? 0 : 1;
             printf("%s\n", val ? "true" : "false");

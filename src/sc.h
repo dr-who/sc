@@ -64,6 +64,8 @@ typedef enum {
     TOK_AND, TOK_OR, TOK_NOT, TOK_XOR,
     TOK_SEMI, TOK_ERROR,
     TOK_STRING,  /* String literal in single quotes */
+    TOK_IDENT,   /* Identifier (for field access) */
+    TOK_DOT,     /* . for field access */
     /* Matrix tokens */
     TOK_LBRACKET, TOK_RBRACKET, TOK_COLON, TOK_COMMA,
     /* Element-wise operators */

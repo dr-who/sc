@@ -1434,13 +1434,13 @@ static const FuncEntry func_registry[] = {
      "mandelbrot"},
     
     {"tscatter", FH_TSCATTER, 0, 1, FF_CONST, "Commands", "tscatter [inner|outer|moon|all]",
-     "Interactive solar system viewer. Arrows=time/dt, +/-=zoom, space=play, 1/2/3=presets.",
+     "Interactive solar system viewer. f=cycle follow target (sun/earth/earth+moon/planets), 1-4=presets.",
      {"tscatter", "tscatter inner", "tscatter moon", "planets outer", NULL, NULL},
      "planet, mandelbrot"},
     
     {"planet", FH_PLANET, 1, 2, FF_CONST, "Special", "planet(\"name\", [t_days])",
-     "Returns planet position as complex x+iy (AU). Bodies: sun,mercury,venus,earth,mars,jupiter,saturn,uranus,neptune,moon.",
-     {"planet(\"earth\", 0)", "planet(\"mars\", 365)", "real(planet(\"venus\", 100))", NULL, NULL, NULL},
+     "Returns 1x10 matrix: [x,y,z,radius,mass,period,a,e,incl,rot]. Also x+iy. Access via _planet.",
+     {"planet(\"earth\", 0)", "_planet(3)  % z coord", "_planet(5)  % mass", NULL, NULL, NULL},
      "tscatter"},
     
     {"hplot", FH_PLOT, 1, 3, FF_CONST, "Commands", "hplot f(x) [xmin xmax]",

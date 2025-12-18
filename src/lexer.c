@@ -449,6 +449,14 @@ void next_token(void)
             /* Otherwise fall through to number parsing (for .5 etc) */
             if (isdigit(*(input_ptr + 1))) {
                 /* Will be handled by number parsing above */
+                current_token.type = TOK_ERROR;
+                return;
+            }
+            /* Check for field access: .identifier */
+            if (is_alpha(*(input_ptr + 1)) || *(input_ptr + 1) == '_') {
+                current_token.type = TOK_DOT;
+                input_ptr++;
+                return;
             }
             current_token.type = TOK_ERROR;
             return;

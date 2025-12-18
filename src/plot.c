@@ -5,6 +5,7 @@
 #define _XOPEN_SOURCE 500  /* For usleep */
 #define _POSIX_C_SOURCE 200809L
 #include "sc.h"
+#include <time.h>
 
 #ifdef HAVE_CONIO
 /* DOS VGA Graphics Mode 13h: 320x200, 256 colors */
@@ -1861,78 +1862,150 @@ void fn_mandelbrot_iter(apfc *result, const apfc *cx, const apfc *cy, const apfc
 #define M_PI 3.14159265358979323846
 #endif
 
+/* Comprehensive planet data structure */
 typedef struct {
     const char *name;
-    double a;        /* Semi-major axis in AU */
-    double period;   /* Orbital period in days */
-    double phase;    /* Phase at t=0 in radians */
-} planet_t;
+    double a;           /* Semi-major axis in AU */
+    double e;           /* Eccentricity */
+    double i;           /* Inclination to ecliptic (degrees) */
+    double omega;       /* Longitude of ascending node (degrees) */
+    double w;           /* Argument of perihelion (degrees) */
+    double L0;          /* Mean longitude at epoch J2000 (degrees) */
+    double period;      /* Orbital period in days */
+    double radius;      /* Physical radius in AU */
+    double mass;        /* Mass in Earth masses */
+    double rot_period;  /* Rotation period in hours (negative = retrograde) */
+} planet_data_t;
 
-static const planet_t planets[] = {
-    {"sun",      0.0,      1.0,       0.0},
-    {"mercury",  0.3871,   87.969,    1.0},
-    {"venus",    0.7233,   224.701,   2.2},
-    {"earth",    1.0000,   365.256,   0.2},
-    {"mars",     1.5237,   686.980,   3.1},
-    {"jupiter",  5.2028,   4332.59,   0.7},
-    {"saturn",   9.5388,   10759.22,  2.9},
-    {"uranus",   19.191,   30685.4,   1.7},
-    {"neptune",  30.068,   60189.0,   0.4},
-    {"moon",     0.00257,  27.321661, 0.0},  /* Special: orbits Earth */
-    {NULL, 0, 0, 0}
+/* Accurate orbital elements (J2000 epoch) */
+/* Sources: NASA JPL, IAU */
+static const planet_data_t planet_db[] = {
+    /* Sun - stationary at origin */
+    {"sun",     0.0,      0.0,     0.0,    0.0,    0.0,    0.0,
+                1.0,      0.00465047, 332946.0, 609.12},
+    
+    /* Mercury */
+    {"mercury", 0.38710,  0.20563, 7.005,  48.331, 29.124, 252.251,
+                87.969,   0.0000163,  0.0553,   1407.6},
+    
+    /* Venus */
+    {"venus",   0.72333,  0.00677, 3.395,  76.680, 54.884, 181.980,
+                224.701,  0.0000404,  0.815,    -5832.5},  /* Retrograde */
+    
+    /* Earth */
+    {"earth",   1.00000,  0.01671, 0.000,  -11.26, 102.95, 100.464,
+                365.256,  0.0000426,  1.000,    23.934},
+    
+    /* Mars */
+    {"mars",    1.52368,  0.09341, 1.850,  49.558, 286.50, 355.453,
+                686.980,  0.0000227,  0.107,    24.623},
+    
+    /* Jupiter */
+    {"jupiter", 5.20260,  0.04839, 1.303,  100.46, 273.87, 34.404,
+                4332.59,  0.000467,   317.83,   9.925},
+    
+    /* Saturn */
+    {"saturn",  9.55491,  0.05415, 2.489,  113.67, 339.39, 50.077,
+                10759.22, 0.000389,   95.16,    10.656},
+    
+    /* Uranus */
+    {"uranus",  19.2184,  0.04717, 0.773,  74.006, 96.999, 314.055,
+                30685.4,  0.000170,   14.54,    -17.24},  /* Retrograde */
+    
+    /* Neptune */
+    {"neptune", 30.1104,  0.00859, 1.770,  131.78, 276.34, 304.349,
+                60189.0,  0.000165,   17.15,    16.11},
+    
+    /* Moon - orbits Earth, inclination to ecliptic ~5.145 degrees */
+    {"moon",    0.00257,  0.0549,  5.145,  125.08, 318.15, 218.32,
+                27.32166, 0.0000116,  0.0123,   655.73},
+    
+    {NULL, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 };
 
-static const planet_t *find_planet(const char *name)
+static const planet_data_t *find_planet_data(const char *name)
 {
     int i;
-    for (i = 0; planets[i].name; i++) {
-        if (strcasecmp(planets[i].name, name) == 0) {
-            return &planets[i];
+    for (i = 0; planet_db[i].name; i++) {
+        if (strcasecmp(planet_db[i].name, name) == 0) {
+            return &planet_db[i];
         }
     }
     return NULL;
 }
 
-/* Get planet position at time t (days). Returns heliocentric coords in AU. */
-static void planet_pos(const char *name, double t_days, double *x, double *y)
+/* Calculate planet position with full Keplerian elements */
+/* Returns x, y (ecliptic plane) and z (height above ecliptic) */
+static void planet_pos_3d(const char *name, double t_days, 
+                          double *x, double *y, double *z)
 {
-    const planet_t *p = find_planet(name);
-    double theta;
+    const planet_data_t *p = find_planet_data(name);
+    double M, E, E_prev, nu, r;
+    double cos_nu, sin_nu;
+    double x_orb, y_orb;
+    double cos_w, sin_w, cos_O, sin_O, cos_i, sin_i;
+    int iter;
     
-    if (!p) {
-        *x = *y = 0;
+    if (!p || p->a == 0) {
+        *x = *y = *z = 0;
         return;
     }
     
-    if (strcmp(name, "sun") == 0) {
-        *x = *y = 0;
-        return;
+    /* Mean anomaly */
+    M = (p->L0 + 360.0 * t_days / p->period) * M_PI / 180.0;
+    M = fmod(M, 2 * M_PI);
+    if (M < 0) M += 2 * M_PI;
+    
+    /* Solve Kepler's equation: E - e*sin(E) = M */
+    E = M;  /* Initial guess */
+    for (iter = 0; iter < 10; iter++) {
+        E_prev = E;
+        E = M + p->e * sin(E);
+        if (fabs(E - E_prev) < 1e-8) break;
     }
     
+    /* True anomaly */
+    cos_nu = (cos(E) - p->e) / (1 - p->e * cos(E));
+    sin_nu = sqrt(1 - p->e * p->e) * sin(E) / (1 - p->e * cos(E));
+    nu = atan2(sin_nu, cos_nu);
+    
+    /* Heliocentric distance */
+    r = p->a * (1 - p->e * cos(E));
+    
+    /* Position in orbital plane */
+    x_orb = r * cos(nu);
+    y_orb = r * sin(nu);
+    
+    /* Convert to ecliptic coordinates */
+    cos_w = cos(p->w * M_PI / 180.0);
+    sin_w = sin(p->w * M_PI / 180.0);
+    cos_O = cos(p->omega * M_PI / 180.0);
+    sin_O = sin(p->omega * M_PI / 180.0);
+    cos_i = cos(p->i * M_PI / 180.0);
+    sin_i = sin(p->i * M_PI / 180.0);
+    
+    /* Rotation matrices combined */
+    *x = (cos_w * cos_O - sin_w * sin_O * cos_i) * x_orb +
+         (-sin_w * cos_O - cos_w * sin_O * cos_i) * y_orb;
+    *y = (cos_w * sin_O + sin_w * cos_O * cos_i) * x_orb +
+         (-sin_w * sin_O + cos_w * cos_O * cos_i) * y_orb;
+    *z = (sin_w * sin_i) * x_orb + (cos_w * sin_i) * y_orb;
+    
+    /* Special case: Moon orbits Earth */
     if (strcmp(name, "moon") == 0) {
-        /* Moon orbits Earth */
-        double ex, ey;
-        planet_pos("earth", t_days, &ex, &ey);
-        theta = 2 * M_PI * (t_days / p->period) + p->phase;
-        *x = ex + p->a * cos(theta);
-        *y = ey + p->a * sin(theta);
-        return;
+        double ex, ey, ez;
+        planet_pos_3d("earth", t_days, &ex, &ey, &ez);
+        *x += ex;
+        *y += ey;
+        *z += ez;
     }
-    
-    theta = 2 * M_PI * (t_days / p->period) + p->phase;
-    *x = p->a * cos(theta);
-    *y = p->a * sin(theta);
 }
 
-/* Calculator function: planet(name, t_days) returns [x, y] */
-void fn_planet_pos(apfc *result_x, apfc *result_y, const char *name, double t_days)
+/* Legacy 2D wrapper */
+static void planet_pos(const char *name, double t_days, double *x, double *y)
 {
-    double x, y;
-    planet_pos(name, t_days, &x, &y);
-    apf_from_double(&result_x->re, x);
-    apf_zero(&result_x->im);
-    apf_from_double(&result_y->re, y);
-    apf_zero(&result_y->im);
+    double z;
+    planet_pos_3d(name, t_days, x, y, &z);
 }
 
 #if !defined(HAVE_CONIO) && !defined(_WIN32)
@@ -2121,7 +2194,7 @@ int do_iscatter(double *xs, double *ys, int *iters, int n, int max_iter)
 #include <sys/select.h>
 #include <unistd.h>
 
-/* Planet display info */
+/* Planet display info - just visual properties */
 typedef struct {
     const char *name;
     char symbol;
@@ -2153,24 +2226,117 @@ static const planet_display_t *get_planet_display(const char *name)
     return NULL;
 }
 
-int do_tscatter(const char **bodies, int num_bodies, const char *follow)
+/* Get planet radius from planet_db */
+static double get_planet_radius(const char *name)
+{
+    const planet_data_t *p = find_planet_data(name);
+    return p ? p->radius : 0.00001;
+}
+
+/* Draw a filled circle using Bresenham-style algorithm
+ * Scales from single dot to full screen
+ * radius_x: radius in character cells (horizontal)
+ * Uses 'O' for interior, '.' for edge pixels when large enough
+ */
+static void draw_filled_circle(char *screen, char *colors, int screen_w, int screen_h,
+                               int cx, int cy, double radius_x, char symbol, int color_idx)
+{
+    int rx, ry;
+    int dy, dx;
+    
+    /* Radius in x (chars) and y (account for char aspect ~2:1) */
+    rx = (int)(radius_x + 0.5);
+    ry = (int)(radius_x / 2.0 + 0.5);  /* Chars are ~2x tall as wide */
+    
+    /* Minimum size: single character */
+    if (rx < 1) rx = 1;
+    if (ry < 1) ry = 1;
+    
+    /* For tiny circles, just draw a single char */
+    if (rx == 1 && ry == 1) {
+        if (cx >= 0 && cx < screen_w && cy >= 0 && cy < screen_h) {
+            int idx = cy * screen_w + cx;
+            /* Size determines character: . for tiny, o for small, O for medium+ */
+            char c = (radius_x < 0.3) ? '.' : ((radius_x < 0.7) ? 'o' : symbol);
+            screen[idx] = c;
+            colors[idx] = color_idx;
+        }
+        return;
+    }
+    
+    /* Draw filled ellipse */
+    for (dy = -ry; dy <= ry; dy++) {
+        for (dx = -rx; dx <= rx; dx++) {
+            /* Ellipse equation: (dx/rx)^2 + (dy/ry)^2 <= 1 */
+            double ex = (double)dx / rx;
+            double ey = (double)dy / ry;
+            double dist_sq = ex*ex + ey*ey;
+            
+            if (dist_sq <= 1.0) {
+                int sx = cx + dx;
+                int sy = cy + dy;
+                if (sx >= 0 && sx < screen_w && sy >= 0 && sy < screen_h) {
+                    int idx = sy * screen_w + sx;
+                    char c;
+                    
+                    /* Edge detection: use '.' for pixels near edge, 'O' for interior */
+                    if (rx >= 3 && dist_sq > 0.7) {
+                        c = '.';  /* Edge */
+                    } else if (rx >= 2 && dist_sq > 0.85) {
+                        c = 'o';  /* Near edge */
+                    } else {
+                        c = symbol;  /* Interior - use planet symbol */
+                    }
+                    
+                    screen[idx] = c;
+                    colors[idx] = color_idx;
+                }
+            }
+        }
+    }
+}
+
+int do_tscatter(const char **bodies, int num_bodies, const char *follow_init)
 {
     int width, height;
     int plot_width, plot_height;
-    double t_days = 0;
-    double dt = 1.0;       /* Days per step */
+    double t_days;          /* Days since J2000 */
+    double dt = 1.0;        /* Days per step */
     int running = 1;
     int need_redraw = 1;
     int playing = 0;
     int x, y, i;
+    time_t now;
     char *screen;
     char *colors;          /* Color index per cell */
     double xmin, xmax, ymin, ymax;
     double view_scale = 2.0;  /* AU - initial view radius */
     double center_x = 0, center_y = 0;
     double aspect_ratio;   /* Character aspect correction */
+    int view_3d = 0;       /* 0 = top-down (X-Y), 1 = tilted 3D view */
+    double tilt_angle = 30.0;  /* Tilt angle in degrees (0=top-down, 90=edge-on) */
+    double size_scale = 1.0;   /* Planet size exaggeration factor */
     
-    iplot_setup_term();
+    /* Initialize to current time: days since J2000 (2000-01-01 12:00:00 UTC) */
+    /* Follow mode: 0=sun, 1=earth, 2=earth-moon barycenter, 3+=cycle through bodies */
+    int follow_mode = 0;
+    
+    /* Initialize to current time: days since J2000 (2000-01-01 12:00:00 UTC) */
+    now = time(NULL);
+    t_days = (double)(now - 946728000) / 86400.0;
+    
+    /* Set initial follow mode based on parameter */
+    if (follow_init) {
+        if (strcasecmp(follow_init, "earth") == 0) follow_mode = 1;
+        else if (strcasecmp(follow_init, "earth,moon") == 0 || 
+                 strcasecmp(follow_init, "earth+moon") == 0 ||
+                 strcasecmp(follow_init, "moon") == 0) {
+            follow_mode = 2;
+            view_scale = 0.006;  /* Zoom in to see moon orbit (0.00257 AU) */
+        }
+    }
+    
+    iplot_setup_term();;
     iplot_get_terminal_size(&width, &height);
     
     plot_width = width;
@@ -2190,53 +2356,69 @@ int do_tscatter(const char **bodies, int num_bodies, const char *follow)
     
     while (running) {
         if (need_redraw) {
-            double positions[20][2];  /* x, y for each body */
-            double follow_x = 0, follow_y = 0;
+            double positions[20][3];  /* x, y, z for each body */
+            double follow_x = 0, follow_y = 0, follow_z = 0;
             double x_scale, y_scale;
+            const char *follow_label = "sun";
+            char view_label[32];
+            double cos_tilt, sin_tilt;
             
-            /* Get positions */
+            /* Calculate tilt transform */
+            cos_tilt = cos(tilt_angle * M_PI / 180.0);
+            sin_tilt = sin(tilt_angle * M_PI / 180.0);
+            
+            if (view_3d) {
+                sprintf(view_label, "3D %.0f°", tilt_angle);
+            } else {
+                strcpy(view_label, "2D");
+            }
+            
+            /* Get 3D positions */
             for (i = 0; i < num_bodies && i < 20; i++) {
-                planet_pos(bodies[i], t_days, &positions[i][0], &positions[i][1]);
+                planet_pos_3d(bodies[i], t_days, &positions[i][0], &positions[i][1], &positions[i][2]);
             }
             
-            /* Calculate follow center */
-            if (follow && strcmp(follow, "sun") != 0) {
-                int follow_count = 0;
-                follow_x = follow_y = 0;
-                
-                /* Check if following a specific body or a group */
-                for (i = 0; i < num_bodies; i++) {
-                    if (strcasecmp(bodies[i], follow) == 0 ||
-                        strcmp(follow, "all") == 0) {
-                        follow_x += positions[i][0];
-                        follow_y += positions[i][1];
-                        follow_count++;
-                    }
-                }
-                
-                /* Special: "earth,moon" or "inner" */
-                if (strcasecmp(follow, "earth") == 0 || 
-                    strcasecmp(follow, "moon") == 0 ||
-                    strcasecmp(follow, "earth,moon") == 0) {
-                    double ex, ey, mx, my;
-                    planet_pos("earth", t_days, &ex, &ey);
-                    planet_pos("moon", t_days, &mx, &my);
-                    follow_x = (ex + mx) / 2;
-                    follow_y = (ey + my) / 2;
-                    follow_count = 1;
-                }
-                
-                if (follow_count > 0) {
-                    follow_x /= follow_count;
-                    follow_y /= follow_count;
-                }
+            /* Calculate follow center based on follow_mode */
+            if (follow_mode == 0) {
+                /* Sun - origin */
+                follow_x = follow_y = follow_z = 0;
+                follow_label = "sun";
+            } else if (follow_mode == 1) {
+                /* Earth */
+                planet_pos_3d("earth", t_days, &follow_x, &follow_y, &follow_z);
+                follow_label = "earth";
+            } else if (follow_mode == 2) {
+                /* Earth-Moon barycenter (mass-weighted) */
+                /* Earth mass = 1.0, Moon mass = 0.0123 Earth masses */
+                double ex, ey, ez, mx, my, mz;
+                double earth_mass = 1.0, moon_mass = 0.0123;
+                double total_mass = earth_mass + moon_mass;
+                planet_pos_3d("earth", t_days, &ex, &ey, &ez);
+                planet_pos_3d("moon", t_days, &mx, &my, &mz);
+                follow_x = (ex * earth_mass + mx * moon_mass) / total_mass;
+                follow_y = (ey * earth_mass + my * moon_mass) / total_mass;
+                follow_z = (ez * earth_mass + mz * moon_mass) / total_mass;
+                follow_label = "E-M bary";
+            } else if (follow_mode >= 3 && follow_mode - 3 < num_bodies) {
+                /* Follow specific body from list */
+                int bi = follow_mode - 3;
+                follow_x = positions[bi][0];
+                follow_y = positions[bi][1];
+                follow_z = positions[bi][2];
+                follow_label = bodies[bi];
             }
             
-            center_x = follow_x;
-            center_y = follow_y;
+            /* Project follow center based on view mode */
+            if (view_3d) {
+                /* 3D: Y on screen = Y*cos(tilt) + Z*sin(tilt) */
+                center_x = follow_x;
+                center_y = follow_y * cos_tilt + follow_z * sin_tilt;
+            } else {
+                center_x = follow_x;
+                center_y = follow_y;
+            }
             
             /* Set view bounds with aspect ratio correction */
-            /* x needs to span more space because chars are wider than tall */
             x_scale = view_scale * (plot_width * aspect_ratio) / plot_height;
             y_scale = view_scale;
             
@@ -2249,46 +2431,86 @@ int do_tscatter(const char **bodies, int num_bodies, const char *follow)
             memset(screen, ' ', plot_width * plot_height);
             memset(colors, 0, plot_width * plot_height);
             
-            /* Draw orbit traces (faint) */
-            for (i = 0; i < num_bodies; i++) {
-                const planet_t *p = find_planet(bodies[i]);
-                if (p && p->a > 0 && strcmp(bodies[i], "moon") != 0) {
-                    /* Draw circular orbit */
-                    int steps = 100;
-                    int s;
-                    for (s = 0; s < steps; s++) {
-                        double theta = 2 * M_PI * s / steps;
-                        double ox = p->a * cos(theta) - follow_x;
-                        double oy = p->a * sin(theta) - follow_y;
-                        
-                        int px = (int)((ox - (xmin - follow_x)) / (xmax - xmin) * plot_width);
-                        int py = (int)(((ymax - follow_y) - oy) / (ymax - ymin) * plot_height);
-                        
-                        if (px >= 0 && px < plot_width && py >= 0 && py < plot_height) {
-                            int idx = py * plot_width + px;
-                            if (screen[idx] == ' ') {
-                                screen[idx] = '.';
-                                colors[idx] = 10;  /* Dim */
+            /* Draw orbit traces (faint) - only in 2D mode */
+            if (!view_3d) {
+                for (i = 0; i < num_bodies; i++) {
+                    const planet_data_t *pd = find_planet_data(bodies[i]);
+                    if (pd && pd->a > 0 && strcmp(bodies[i], "moon") != 0) {
+                        /* Draw elliptical orbit using orbital elements */
+                        int steps = 100;
+                        int s;
+                        for (s = 0; s < steps; s++) {
+                            double theta = 2 * M_PI * s / steps;
+                            /* Simplified ellipse in orbital plane */
+                            double r = pd->a * (1 - pd->e * pd->e) / (1 + pd->e * cos(theta));
+                            double ox = r * cos(theta) - follow_x;
+                            double oy = r * sin(theta) - follow_y;
+                            
+                            int px = (int)((ox - (xmin - follow_x)) / (xmax - xmin) * plot_width);
+                            int py = (int)(((ymax - follow_y) - oy) / (ymax - ymin) * plot_height);
+                            
+                            if (px >= 0 && px < plot_width && py >= 0 && py < plot_height) {
+                                int idx = py * plot_width + px;
+                                if (screen[idx] == ' ') {
+                                    screen[idx] = '.';
+                                    colors[idx] = 10;  /* Dim */
+                                }
                             }
+                        }
+                    }
+                }
+            } else {
+                /* In 3D mode, draw a line at z=0 (ecliptic) */
+                int px;
+                int py = (int)((ymax - 0) / (ymax - ymin) * plot_height);
+                for (px = 0; px < plot_width; px++) {
+                    /* Draw ecliptic plane line */
+                    if (py >= 0 && py < plot_height) {
+                        int idx = py * plot_width + px;
+                        if (screen[idx] == ' ') {
+                            screen[idx] = '-';
+                            colors[idx] = 10;
                         }
                     }
                 }
             }
             
-            /* Draw bodies */
-            for (i = 0; i < num_bodies; i++) {
-                double bx = positions[i][0] - follow_x;
-                double by = positions[i][1] - follow_y;
-                const planet_display_t *disp = get_planet_display(bodies[i]);
+            /* Draw bodies - smallest first so larger ones overdraw */
+            for (i = num_bodies - 1; i >= 0; i--) {
+                double bx, by, bz, screen_y;
+                double radius_au, x_per_pixel, radius_chars;
+                const planet_display_t *disp;
+                int cx, cy;
                 
-                int px = (int)((bx - (xmin - follow_x)) / (xmax - xmin) * plot_width);
-                int py = (int)(((ymax - follow_y) - by) / (ymax - ymin) * plot_height);
+                bx = positions[i][0];
+                by = positions[i][1];
+                bz = positions[i][2];
+                disp = get_planet_display(bodies[i]);
+                radius_au = get_planet_radius(bodies[i]);
                 
-                if (px >= 0 && px < plot_width && py >= 0 && py < plot_height) {
-                    int idx = py * plot_width + px;
-                    screen[idx] = disp ? disp->symbol : '*';
-                    colors[idx] = i + 1;  /* Planet index + 1 */
+                /* Apply size exaggeration */
+                radius_au *= size_scale;
+                
+                /* Project position based on view mode */
+                if (view_3d) {
+                    /* 3D projection: rotate around X axis by tilt angle */
+                    screen_y = by * cos_tilt + bz * sin_tilt;
+                } else {
+                    screen_y = by;
                 }
+                
+                /* Convert radius to character cells */
+                x_per_pixel = (xmax - xmin) / plot_width;
+                radius_chars = radius_au / x_per_pixel;
+                
+                /* Screen coordinates */
+                cx = (int)((bx - xmin) / (xmax - xmin) * plot_width);
+                cy = (int)((ymax - screen_y) / (ymax - ymin) * plot_height);
+                
+                /* Draw using filled circle function */
+                draw_filled_circle(screen, colors, plot_width, plot_height,
+                                   cx, cy, radius_chars, 
+                                   disp ? disp->symbol : '*', i + 1);
             }
             
             /* Render */
@@ -2329,10 +2551,35 @@ int do_tscatter(const char **bodies, int num_bodies, const char *follow)
                 }
             }
             
-            /* Status */
-            printf("\n\033[K\033[1;36mtscatter\033[0m t=%.1f days (%.2f yrs) dt=%.2f %s  ",
-                   t_days, t_days / 365.256, dt, playing ? "\033[32m▶\033[0m" : "\033[90m⏸\033[0m");
-            printf("\033[90m[←→=time ↑↓=dt +/-=zoom space=play r=reset q=quit]\033[0m");
+            /* Status - show date instead of days */
+            {
+                time_t display_time = 946728000 + (time_t)(t_days * 86400);
+                struct tm *tm_info = gmtime(&display_time);
+                char date_buf[32];
+                char size_buf[32];
+                strftime(date_buf, sizeof(date_buf), "%Y-%m-%d", tm_info);
+                if (size_scale >= 1e9) {
+                    sprintf(size_buf, "%.0fB×", size_scale / 1e9);
+                } else if (size_scale >= 1e6) {
+                    sprintf(size_buf, "%.0fM×", size_scale / 1e6);
+                } else if (size_scale >= 1e3) {
+                    sprintf(size_buf, "%.0fK×", size_scale / 1e3);
+                } else if (size_scale > 1.0) {
+                    sprintf(size_buf, "%.0f×", size_scale);
+                } else {
+                    size_buf[0] = '\0';  /* Don't show 1× */
+                }
+                printf("\n\033[K\033[1;36msolar\033[0m \033[33m%s\033[0m dt=%.1fd %s @\033[36m%s\033[0m %s%s%s  ",
+                       date_buf, dt, playing ? "\033[32m▶\033[0m" : "\033[90m⏸\033[0m", 
+                       follow_label, 
+                       size_buf[0] ? "\033[35m" : "", size_buf, size_buf[0] ? "\033[0m " : "");
+                printf("\033[90m%s\033[0m", view_label);
+            }
+            if (view_3d) {
+                printf(" \033[90m[←→=time +/-=zoom s/S=size w/e=tilt d=2D]\033[0m");
+            } else {
+                printf(" \033[90m[←→=time ↑↓=dt +/-=zoom s/S=size f=follow d=3D]\033[0m");
+            }
             fflush(stdout);
             
             need_redraw = 0;
@@ -2398,22 +2645,71 @@ int do_tscatter(const char **bodies, int num_bodies, const char *follow)
                         playing = !playing;
                         need_redraw = 1;
                         break;
-                    case 'r': case 'R':  /* Reset */
-                        t_days = 0;
+                    case 'r': case 'R':  /* Reset to NOW */
+                        now = time(NULL);
+                        t_days = (double)(now - 946728000) / 86400.0;
                         dt = 1.0;
                         view_scale = 2.0;
+                        follow_mode = 0;
+                        need_redraw = 1;
+                        break;
+                    case 'f':  /* Cycle follow mode forward */
+                        follow_mode++;
+                        /* Modes: 0=sun, 1=earth, 2=earth+moon, 3+=bodies */
+                        if (follow_mode > 2 + num_bodies) follow_mode = 0;
+                        need_redraw = 1;
+                        break;
+                    case 'F':  /* Cycle follow mode backward */
+                        follow_mode--;
+                        if (follow_mode < 0) follow_mode = 2 + num_bodies;
                         need_redraw = 1;
                         break;
                     case '1':  /* Inner planets view */
                         view_scale = 2.0;
+                        follow_mode = 0;  /* Follow sun */
                         need_redraw = 1;
                         break;
                     case '2':  /* Outer planets view */
                         view_scale = 35.0;
+                        follow_mode = 0;  /* Follow sun */
                         need_redraw = 1;
                         break;
-                    case '3':  /* Moon view */
-                        view_scale = 0.01;
+                    case '3':  /* Moon view - follow earth+moon */
+                        view_scale = 0.006;  /* Moon orbit is 0.00257 AU radius */
+                        follow_mode = 2;  /* Earth+moon barycenter */
+                        need_redraw = 1;
+                        break;
+                    case '4':  /* Follow earth */
+                        follow_mode = 1;
+                        need_redraw = 1;
+                        break;
+                    case 'd': case 'D':  /* Toggle 2D/3D view */
+                        view_3d = !view_3d;
+                        if (view_3d && tilt_angle < 5) tilt_angle = 30;  /* Default tilt */
+                        need_redraw = 1;
+                        break;
+                    case 's':  /* Increase size scale (×3) */
+                        size_scale *= 3.0;
+                        if (size_scale > 1e12) size_scale = 1e12;
+                        need_redraw = 1;
+                        break;
+                    case 'S':  /* Decrease size scale (÷3) */
+                        size_scale /= 3.0;
+                        if (size_scale < 1.0) size_scale = 1.0;
+                        need_redraw = 1;
+                        break;
+                    case 'w':  /* Tilt up (more top-down) */
+                        if (view_3d) {
+                            tilt_angle -= 10;
+                            if (tilt_angle < 0) tilt_angle = 0;
+                        }
+                        need_redraw = 1;
+                        break;
+                    case 'e':  /* Tilt down (more edge-on) */
+                        if (view_3d) {
+                            tilt_angle += 10;
+                            if (tilt_angle > 90) tilt_angle = 90;
+                        }
                         need_redraw = 1;
                         break;
                 }
@@ -2444,7 +2740,47 @@ int do_tscatter(const char **bodies, int num_bodies, const char *follow)
 }
 #endif
 
-/* Planet position function for calculator */
+/* Planet data function for calculator - returns array of 10 values:
+ * [0] x - heliocentric X position (AU)
+ * [1] y - heliocentric Y position (AU, in ecliptic plane)
+ * [2] z - height above ecliptic (AU)
+ * [3] radius - physical radius (AU)
+ * [4] mass - mass (Earth masses)
+ * [5] period - orbital period (days)
+ * [6] a - semi-major axis (AU)
+ * [7] e - eccentricity
+ * [8] i - inclination (degrees)
+ * [9] rot_period - rotation period (hours, negative=retrograde)
+ */
+#define PLANET_DATA_SIZE 10
+
+void fn_planet_data(const char *name, double t_days, double *data)
+{
+    const planet_data_t *p = find_planet_data(name);
+    double x, y, z;
+    int i;
+    
+    /* Initialize to zero */
+    for (i = 0; i < PLANET_DATA_SIZE; i++) data[i] = 0;
+    
+    if (!p) return;
+    
+    /* Get 3D position */
+    planet_pos_3d(name, t_days, &x, &y, &z);
+    
+    data[0] = x;
+    data[1] = y;
+    data[2] = z;
+    data[3] = p->radius;
+    data[4] = p->mass;
+    data[5] = p->period;
+    data[6] = p->a;
+    data[7] = p->e;
+    data[8] = p->i;
+    data[9] = p->rot_period;
+}
+
+/* Legacy 2D wrapper for backward compatibility */
 void fn_planet(const char *name, double t_days, double *x, double *y)
 {
     planet_pos(name, t_days, x, y);

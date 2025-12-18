@@ -5,6 +5,7 @@
  */
 #define _XOPEN_SOURCE 600
 #include <math.h>
+#include <time.h>
 #ifndef INFINITY
 #define INFINITY (1.0/0.0)
 #endif
@@ -755,12 +756,28 @@ static int parse_factor(apfc *result)
             return parse_random_func(result, name);
         }
 
-        /* planet("name", t_days) - Get planet position */
+        /* planet("name", [t_offset]) - Get planet data as matrix */
+        /* t_offset: days relative to NOW (0=now, -1=yesterday, 365=next year) */
+        /* Returns 1x10 matrix: [x, y, z, radius, mass, period, a, e, incl, rot] */
+        /* Can access fields: planet("earth").x, planet("earth").mass, etc. */
         if (str_eq(name, "planet")) {
-            extern void fn_planet(const char *name, double t_days, double *x, double *y);
+            extern void fn_planet_data(const char *name, double t_days, double *data);
+            extern int suppress_result_print;
             char planet_name[32];
-            double t_days = 0, px, py;
-            int ni = 0;
+            double t_offset = 0;  /* Days relative to now */
+            double t_days;        /* Actual days from J2000 */
+            double data[10];
+            int ni = 0, di;
+            matrix_t mat;
+            static const char *col_names[] = {"x", "y", "z", "radius", "mass", "period", "a", "e", "incl", "rot"};
+            int field_idx = -1;   /* -1 = no field, 0-9 = specific field */
+            time_t now;
+            double days_since_j2000;
+            
+            /* Calculate days since J2000 epoch (2000-01-01 12:00:00 UTC) */
+            now = time(NULL);
+            /* J2000 epoch in Unix time: 946728000 (2000-01-01 12:00:00 UTC) */
+            days_since_j2000 = (double)(now - 946728000) / 86400.0;
             
             if (current_token.type != TOK_LPAREN) {
                 printf("Error: expected '(' after 'planet'\n");
@@ -778,12 +795,12 @@ static int parse_factor(apfc *result)
                 if (*input_ptr == delim) input_ptr++;
                 while (*input_ptr == ' ') input_ptr++;
                 
-                /* Check for comma and second arg */
+                /* Check for comma and second arg (time offset in days) */
                 if (*input_ptr == ',') {
                     input_ptr++;
                     next_token();
                     if (!parse_expr(&arg)) return 0;
-                    t_days = apf_to_double(&arg.re);
+                    t_offset = apf_to_double(&arg.re);
                 } else {
                     next_token();
                 }
@@ -794,9 +811,103 @@ static int parse_factor(apfc *result)
                 }
                 next_token();
                 
-                fn_planet(planet_name, t_days, &px, &py);
-                apf_from_double(&result->re, px);
-                apf_from_double(&result->im, py);
+                /* Check for field access: .x, .y, .z, .mass, etc. */
+                if (current_token.type == TOK_DOT) {
+                    char field_name[32];
+                    int fi = 0;
+                    /* After DOT, read identifier directly from input */
+                    while (*input_ptr == ' ') input_ptr++;
+                    while (fi < 31 && ((*input_ptr >= 'a' && *input_ptr <= 'z') ||
+                                       (*input_ptr >= 'A' && *input_ptr <= 'Z') ||
+                                       (*input_ptr >= '0' && *input_ptr <= '9') ||
+                                       *input_ptr == '_')) {
+                        field_name[fi++] = *input_ptr++;
+                    }
+                    field_name[fi] = '\0';
+                    next_token();
+                    
+                    if (fi == 0) {
+                        printf("Error: expected field name after '.'\n");
+                        return 0;
+                    }
+                    
+                    /* Find field index */
+                    for (di = 0; di < 10; di++) {
+                        if (strcmp(field_name, col_names[di]) == 0) {
+                            field_idx = di;
+                            break;
+                        }
+                    }
+                    if (field_idx < 0) {
+                        printf("Error: unknown field '%s'. Valid: x,y,z,radius,mass,period,a,e,incl,rot\n", field_name);
+                        return 0;
+                    }
+                }
+                
+                /* Calculate actual time: current time + offset */
+                t_days = days_since_j2000 + t_offset;
+                
+                /* Get planet data */
+                fn_planet_data(planet_name, t_days, data);
+                
+                /* If field access, return just that value */
+                if (field_idx >= 0) {
+                    apf_from_double(&result->re, data[field_idx]);
+                    apf_zero(&result->im);
+                    return 1;
+                }
+                
+                /* Create 1x10 matrix */
+                mat_init(&mat, 1, 10);
+                for (di = 0; di < 10; di++) {
+                    apf_from_double(&MAT_AT(&mat, 0, di).re, data[di]);
+                    apf_zero(&MAT_AT(&mat, 0, di).im);
+                }
+                
+                /* Store matrix as _planet for indexing access */
+                {
+                    extern int set_named_matrix(const char *name, const matrix_t *val);
+                    set_named_matrix("_planet", &mat);
+                }
+                
+                /* Print formatted output with labels */
+                {
+                    time_t display_time = now + (time_t)(t_offset * 86400);
+                    struct tm *tm_info = gmtime(&display_time);
+                    char time_buf[64];
+                    strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M UTC", tm_info);
+                    printf("\033[36m%s\033[0m at %s", planet_name, time_buf);
+                    if (t_offset != 0) {
+                        printf(" (t%+.1f days)", t_offset);
+                    }
+                    printf(":\n");
+                }
+                for (di = 0; di < 10; di++) {
+                    printf("  \033[33m%-7s\033[0m = ", col_names[di]);
+                    if (di < 3) {
+                        printf("%.6f AU\n", data[di]);
+                    } else if (di == 3) {
+                        printf("%.4e AU (%.0f km)\n", data[di], data[di] * 149597870.7);
+                    } else if (di == 4) {
+                        printf("%.4f Earth masses\n", data[di]);
+                    } else if (di == 5) {
+                        printf("%.3f days (%.2f years)\n", data[di], data[di]/365.256);
+                    } else if (di == 6) {
+                        printf("%.4f AU\n", data[di]);
+                    } else if (di == 7) {
+                        printf("%.5f\n", data[di]);
+                    } else if (di == 8) {
+                        printf("%.3f°\n", data[di]);
+                    } else if (di == 9) {
+                        printf("%.2f hours\n", data[di]);
+                    }
+                }
+                printf("  \033[90mAccess: _planet(1..10) or .x .y .z .radius .mass .period .a .e .incl .rot\033[0m\n");
+                
+                /* Return position as complex for expressions */
+                apf_from_double(&result->re, data[0]);
+                apf_from_double(&result->im, data[1]);
+                suppress_result_print = 1;
                 return 1;
             } else {
                 printf("Error: planet() requires quoted string: planet(\"earth\", 0)\n");

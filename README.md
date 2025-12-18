@@ -710,7 +710,7 @@ Interactive time-based solar system simulation.
 >>> tscatter           % All planets (Mercury through Saturn)
 >>> tscatter inner     % Inner planets (Mercury, Venus, Earth, Mars)
 >>> tscatter outer     % Outer planets (Jupiter, Saturn, Uranus, Neptune)
->>> tscatter moon      % Earth-Moon system (follows Earth)
+>>> tscatter moon      % Earth-Moon system (follows Earth+Moon barycenter)
 >>> planets all        % Alias for tscatter
 >>> solar              % Alias for tscatter
 ```
@@ -720,7 +720,11 @@ Interactive time-based solar system simulation.
 - **↑/↓**: Increase/decrease time step
 - **Space**: Play/pause animation
 - **+/-**: Zoom in/out
-- **1/2/3**: Preset views (inner/outer/moon)
+- **f/F**: Cycle follow target (sun → earth → earth+moon → each planet)
+- **1**: Inner view (2 AU, follow sun)
+- **2**: Outer view (35 AU, follow sun)
+- **3**: Moon view (0.01 AU, follow earth+moon barycenter)
+- **4**: Follow Earth
 - **r**: Reset to t=0
 - **q/ESC**: Exit
 
